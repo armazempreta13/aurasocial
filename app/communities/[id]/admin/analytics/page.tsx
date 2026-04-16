@@ -7,7 +7,8 @@ import { doc, getDoc, collection, query, where, getCountFromServer } from 'fireb
 import { BarChart3, Users, MessageSquare, Heart, TrendingUp } from 'lucide-react';
 
 export default function CommunityAdminAnalyticsPage() {
-  const { id } = useParams();
+  const params = useParams();
+  const id = params?.id as string;
   const [stats, setStats] = useState({
     memberCount: 0,
     postCount: 0,

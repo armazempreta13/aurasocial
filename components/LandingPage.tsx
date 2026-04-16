@@ -12,7 +12,7 @@ export function LandingPage() {
   const [authFocusNonce, setAuthFocusNonce] = useState(0);
   
   useEffect(() => {
-    const requestedAuth = searchParams.get('auth');
+    const requestedAuth = searchParams?.get('auth');
     if (requestedAuth === 'login' || requestedAuth === 'signup') {
       setAuthMode(requestedAuth);
       setAuthFocusNonce((current) => current + 1);

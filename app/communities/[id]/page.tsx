@@ -15,7 +15,8 @@ import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
 
 export default function CommunityDetailPage() {
-  const { id } = useParams();
+  const params = useParams();
+  const id = params?.id as string;
   const router = useRouter();
   const { profile } = useAppStore();
   const { t } = useTranslation('common');
@@ -28,13 +29,13 @@ export default function CommunityDetailPage() {
   useEffect(() => {
     if (!id) return;
 
-    const unsubscribe = onSnapshot(doc(db, 'communities', id as string), async (doc) => {
-      if (doc.exists()) {
-        const data = { id: doc.id, ...doc.data() };
+    const unsubscribe = onSnapshot(doc(db, 'communities', id), async (docSnap) => {
+      if (docSnap.exists()) {
+        const data = { id: docSnap.id, ...docSnap.data() } as any;
         setCommunity(data);
 
         if (profile && data.members?.includes(profile.uid) && data.gate_requireRulesAcceptance && data.rules_currentVersion > 0) {
-          const acceptRef = doc(db, 'communities', id as string, 'rule_acceptances', profile.uid);
+          const acceptRef = doc(db, 'communities', id, 'rule_acceptances', profile.uid);
           const acceptSnap = await getDoc(acceptRef);
           const userVersion = acceptSnap.exists() ? acceptSnap.data().rulesVersion : 0;
           

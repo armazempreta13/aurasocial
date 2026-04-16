@@ -10,7 +10,8 @@ import { Settings, Users, Shield, List, ArrowLeft, Activity, Lock, BarChart3 } f
 import Link from 'next/link';
 
 export default function CommunityAdminLayout({ children }: { children: React.ReactNode }) {
-  const { id } = useParams();
+  const params = useParams();
+  const id = params?.id as string;
   const router = useRouter();
   const pathname = usePathname();
   const { profile } = useAppStore();

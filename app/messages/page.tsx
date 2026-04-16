@@ -62,7 +62,7 @@ function MessagesContent() {
   const profile = useAppStore((state) => state.profile);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const initialChatId = searchParams.get('chatId');
+  const initialChatId = searchParams?.get('chatId') || null;
 
   const { sendSignal, events } = useSignaling();
 
@@ -168,11 +168,11 @@ function MessagesContent() {
     const { type, fromId, payload } = events;
     if (type === 'message') {
       const msg = payload.message as MessageRecord;
-      if (payload.chatId === activeChatId) setMessages(prev => [...prev, msg]);
-      setChats(prev => prev.map(c => c.id === payload.chatId ? { ...c, lastMessage: msg.text, lastMessageTime: msg.createdAt } : c));
+      if (payload.chatId === activeChatId) setMessages((prev: any) => [...prev, msg]);
+      setChats((prev: any) => prev.map((c: any) => c.id === payload.chatId ? { ...c, lastMessage: msg.text, lastMessageTime: msg.createdAt } : c));
     }
     if (type === 'typing-status') {
-      setIsTyping(prev => ({ ...prev, [fromId]: payload.isTyping }));
+      setIsTyping((prev: any) => ({ ...prev, [fromId]: payload.isTyping }));
     }
   }, [events, activeChatId]);
 
@@ -186,10 +186,10 @@ function MessagesContent() {
         body: JSON.stringify({ chatId: activeChat.id, senderId: profile.uid, text, type, attachmentUrl: url })
       });
       const savedMsg = await res.json();
-      setMessages(prev => [...prev, savedMsg]);
+      setMessages((prev: any) => [...prev, savedMsg]);
       sendSignal(activeChat.otherUser.uid, 'message', { chatId: activeChat.id, message: savedMsg });
       sendSignal(activeChat.otherUser.uid, 'typing-status', { chatId: activeChat.id, isTyping: false });
-      setChats(prev => prev.map(c => c.id === activeChat.id ? { ...c, lastMessage: text, lastMessageTime: savedMsg.createdAt } : c));
+      setChats((prev: any) => prev.map((c: any) => c.id === activeChat.id ? { ...c, lastMessage: text, lastMessageTime: savedMsg.createdAt } : c));
     } catch (e) { console.error(e); }
   };
 
@@ -201,7 +201,7 @@ function MessagesContent() {
         body: JSON.stringify({ participants: [profile!.uid, user.uid] })
       });
       const chat = await res.json();
-      setChats(prev => prev.find(c => c.id === chat.id) ? prev : [{ ...chat, otherUser: user, unreadCount: 0 }, ...prev]);
+      setChats((prev: any) => prev.find((c: any) => c.id === chat.id) ? prev : [{ ...chat, otherUser: user, unreadCount: 0 }, ...prev]);
       setActiveChatId(chat.id);
       setSearchQuery('');
     } catch (e) { console.error(e); }

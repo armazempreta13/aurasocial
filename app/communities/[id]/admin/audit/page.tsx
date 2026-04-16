@@ -8,7 +8,8 @@ import { Activity, ShieldAlert, UserMinus, Settings, MessageSquare, Clock } from
 import { useAppStore } from '@/lib/store';
 
 export default function CommunityAdminAuditPage() {
-  const { id } = useParams();
+  const params = useParams();
+  const id = params?.id as string;
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 

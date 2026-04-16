@@ -22,6 +22,7 @@ interface UserProfile {
     activityStatus: boolean;
   };
   relationshipSettings?: RelationshipSettings;
+  onboardingCompleted?: boolean;
 }
 
 interface AppState {

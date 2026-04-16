@@ -25,7 +25,8 @@ type Rule = {
 };
 
 export default function CommunityAdminRulesPage() {
-  const { id } = useParams();
+  const params = useParams();
+  const id = params?.id as string;
   const { profile } = useAppStore();
   
   const [community, setCommunity] = useState<any>(null);
@@ -77,7 +78,7 @@ export default function CommunityAdminRulesPage() {
   }, [id, profile]);
 
   const toggleGate = () => {
-    setCommunity(prev => ({ ...prev, gate_requireRulesAcceptance: !prev.gate_requireRulesAcceptance }));
+    setCommunity((prev: any) => ({ ...prev, gate_requireRulesAcceptance: !prev?.gate_requireRulesAcceptance }));
     setHasChanges(true);
   }
 

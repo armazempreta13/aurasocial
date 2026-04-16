@@ -148,7 +148,7 @@ export function Feed({ userId, communityId, type = 'posts', searchQuery }: { use
 
   const allPosts = useMemo(
     () => {
-      const posts = data?.pages.flatMap((page) => page.docs.map((doc) => ({ id: doc.id, ...doc.data() }))) || [];
+      const posts = data?.pages.flatMap((page) => page.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }))) || [];
       
       // 1. ADVANCED DEDUPLICATION & RECONCILIATION
       // We prioritize server data but preserve local state to avoid "jumping"
@@ -267,7 +267,7 @@ export function Feed({ userId, communityId, type = 'posts', searchQuery }: { use
       if (snapshot.empty) return;
       const latestPostId = snapshot.docs[0].id;
       
-      const existingPosts = data?.pages.flatMap(p => p.docs.map(d => d.id)) || [];
+      const existingPosts = data?.pages.flatMap(p => p.docs.map((d: any) => d.id)) || [];
       if (!existingPosts.includes(latestPostId) && status === 'success' && existingPosts.length > 0) {
         setNewPostsAvailable(prev => Array.from(new Set([...prev, latestPostId])));
       }
@@ -337,7 +337,7 @@ export function Feed({ userId, communityId, type = 'posts', searchQuery }: { use
         </div>
       )}
 
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-10">
         {allPosts.map((post, idx) => (
           <div key={post.id} className="animate-in fade-in slide-in-from-bottom-2 duration-500" style={{ animationDelay: `${Math.min(idx * 50, 400)}ms` }}>
             <PostCard post={post} />

@@ -21,7 +21,7 @@ export default function SettingsPage() {
 function SettingsContent() {
   const { t } = useTranslation('common');
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get('tab') || 'account';
+  const initialTab = searchParams?.get('tab') || 'account';
   
   const { profile, focusMode, toggleFocusMode } = useAppStore();
   const [activeTab, setActiveTab] = useState(initialTab);

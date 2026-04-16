@@ -7,7 +7,8 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { Save, Loader2, Image as ImageIcon } from 'lucide-react';
 
 export default function CommunityAdminGeneralPage() {
-  const { id } = useParams();
+  const params = useParams();
+  const id = params?.id as string;
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

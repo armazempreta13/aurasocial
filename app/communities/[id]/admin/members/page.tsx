@@ -8,7 +8,8 @@ import { Loader2, UserMinus, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 
 export default function CommunityAdminMembersPage() {
-  const { id } = useParams();
+  const params = useParams();
+  const id = params?.id as string;
   const { profile } = useAppStore();
   const [community, setCommunity] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);

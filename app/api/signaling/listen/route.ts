@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { signalingStore } from '@/lib/signaling';
+import { signalingStore, SignalingEvent } from '@/lib/signaling';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     start(controller) {
       const encoder = new TextEncoder();
       
-      const unsubscribe = signalingStore.register(userId, (event) => {
+      const unsubscribe = signalingStore.register(userId, (event: SignalingEvent) => {
         const payload = JSON.stringify(event);
         controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
       });

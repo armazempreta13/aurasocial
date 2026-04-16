@@ -8,7 +8,8 @@ import { Shield, Trash2, Loader2, MessageSquare } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 
 export default function CommunityAdminModerationStub() {
-  const { id } = useParams();
+  const params = useParams();
+  const id = params?.id as string;
   const { profile } = useAppStore();
   const [posts, setPosts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

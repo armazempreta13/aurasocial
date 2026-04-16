@@ -21,7 +21,7 @@ export default function ProfilePage() {
   const { t } = useTranslation('common');
   const params = useParams();
   const router = useRouter();
-  const userId = params.id as string;
+  const userId = params?.id as string;
   const { profile: currentUser, isAuthReady } = useAppStore();
   
   const [viewedUser, setViewedUser] = useState<any>(null);
@@ -474,7 +474,7 @@ export default function ProfilePage() {
               {!isOwner && relationship && (
                 <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-[13px] text-muted-foreground">
                   <span className="px-3 py-1 rounded-full bg-muted/50">
-                    Status: <span className="font-semibold text-foreground">{t(`relationship.${relationship.status}`, relationship.status.replace('_', ' '))}</span>
+                    Status: <span className="font-semibold text-foreground">{t(`relationship.${relationship.status}`, relationship.status.replace('_', ' ')) as string}</span>
                   </span>
                   <span className="px-3 py-1 rounded-full bg-muted/50">
                     {t('profile_page.affinity', 'Affinity')} {relationship.affinityScore}

@@ -216,7 +216,7 @@
         "chatId": "Xg1kUDYzAvQ91rChJE1NhXxSV5I3__h40eXEBICYQ9XvkCoUu92OrCxMH3",
         "isTyping": true
       },
-      "consumed": false
+      "consumed": true
     },
     {
       "id": 1776377551541,
@@ -227,7 +227,7 @@
         "chatId": "Xg1kUDYzAvQ91rChJE1NhXxSV5I3__h40eXEBICYQ9XvkCoUu92OrCxMH3",
         "isTyping": true
       },
-      "consumed": false
+      "consumed": true
     },
     {
       "id": 1776377551751,
@@ -246,7 +246,7 @@
           "read": false
         }
       },
-      "consumed": false
+      "consumed": true
     },
     {
       "id": 1776377551756,
@@ -257,7 +257,7 @@
         "chatId": "Xg1kUDYzAvQ91rChJE1NhXxSV5I3__h40eXEBICYQ9XvkCoUu92OrCxMH3",
         "isTyping": false
       },
-      "consumed": false
+      "consumed": true
     }
   ],
   "webrtc_signals": []

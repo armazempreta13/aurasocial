@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 function ExploreContent() {
   const { t } = useTranslation('common');
   const searchParams = useSearchParams();
-  const searchQuery = searchParams.get('q') || '';
+  const searchQuery = searchParams?.get('q') || '';
   const [activeTab, setActiveTab] = useState<'all' | 'people' | 'posts'>('all');
   const [users, setUsers] = useState<any[]>([]);
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);

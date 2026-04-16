@@ -141,28 +141,28 @@ export function CreatePost({ communityId, communityName }: { communityId?: strin
 
   return (
     <div 
-      className={`relative bg-white rounded-[28px] shadow-[0_12px_40px_rgba(0,0,0,0.03)] p-6 mb-10 border transition-all duration-300 ${isDragging ? 'border-[#7a63f1] bg-[#7a63f1]/5 scale-[1.01]' : 'border-slate-100'}`}
+      className={`relative bg-white rounded-[40px] shadow-[0_8px_40px_rgba(0,0,0,0.02)] p-8 mb-10 border transition-all duration-700 ${isDragging ? 'border-primary bg-primary/5 scale-[1.02] shadow-primary/10' : 'border-slate-50'}`}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
-      <div className="flex gap-3 mb-4">
-        <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden shrink-0 ring-2 ring-transparent">
+      <div className="flex gap-4 mb-6">
+        <div className="w-14 h-14 rounded-[22px] bg-slate-100 overflow-hidden shrink-0 ring-4 ring-white shadow-xl shadow-black/5">
           {profile?.photoURL ? (
             <img src={profile.photoURL} alt="" className="w-full h-full object-cover" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-muted-foreground font-medium">
+            <div className="w-full h-full flex items-center justify-center text-primary/30 font-black text-xl bg-gradient-to-br from-slate-50 to-slate-200">
               {profile?.displayName?.charAt(0).toUpperCase() || 'U'}
             </div>
           )}
         </div>
-        <div className="flex-1 flex flex-col gap-2">
-          <div className="bg-slate-50 rounded-[22px] px-6 py-5 flex items-center cursor-text hover:bg-white transition-all border border-slate-100 focus-within:border-[#7a63f1]/40 focus-within:bg-white focus-within:shadow-[0_12px_36px_rgba(122,99,241,0.12)]">
+        <div className="flex-1 flex flex-col gap-3">
+          <div className="bg-slate-50/50 rounded-[28px] px-8 py-6 flex items-center cursor-text hover:bg-white transition-all duration-500 border border-slate-100/50 focus-within:border-primary/30 focus-within:bg-white focus-within:shadow-[0_20px_50px_rgba(0,0,0,0.04)] ring-1 ring-transparent focus-within:ring-primary/5">
             <textarea 
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder={communityName ? `Post in ${communityName}...` : profile?.displayName ? t('create_post.placeholder', { name: profile.displayName.split(' ')[0] }) : t('create_post.placeholder_anon', 'Share your thoughts...')}
-              className="bg-transparent w-full focus:outline-none text-[15px] text-foreground placeholder:text-muted-foreground resize-none min-h-[40px]"
+              placeholder={communityName ? `Share with ${communityName} neighbors...` : profile?.displayName ? t('create_post.placeholder', { name: profile.displayName.split(' ')[0] }) : t('create_post.placeholder_anon', 'What is on your mind?')}
+              className="bg-transparent w-full focus:outline-none text-[17px] text-slate-900 placeholder:text-slate-400 font-medium resize-none min-h-[48px] leading-relaxed"
               rows={content.split('\n').length}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
@@ -269,39 +269,39 @@ export function CreatePost({ communityId, communityName }: { communityId?: strin
         </div>
       </div>
       
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-border/40 mt-3">
-        <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-6 pt-6 border-t border-slate-50 mt-4">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <button 
             type="button"
             onClick={() => setShowImageInput(!showImageInput)}
-            className={`flex items-center gap-2.5 px-4 py-2.5 rounded-[16px] font-bold text-[13px] transition-all hover:scale-[1.03] active:scale-95 ${showImageInput || imageUrl ? 'bg-[#7a63f1] text-white shadow-[0_8px_20px_rgba(122,99,241,0.2)]' : 'bg-slate-50 text-slate-500 hover:text-[#7a63f1] hover:bg-[#7a63f1]/5 border border-slate-100'}`}
+            className={`flex items-center gap-3 px-5 py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all duration-300 hover:scale-[1.05] active:scale-95 ${showImageInput || imageUrl ? 'bg-primary text-white shadow-xl shadow-primary/20' : 'bg-slate-50 text-slate-500 hover:text-primary hover:bg-white hover:shadow-lg hover:shadow-black/5 border border-slate-100'}`}
           >
-            <ImageIcon className="w-4.5 h-4.5" /> <span>{t('create_post.photo_video', 'Foto/Vídeo')}</span>
+            <ImageIcon className="w-4 h-4" /> <span>{t('create_post.photo_video', 'Media')}</span>
           </button>
           
-          <button type="button" className="flex items-center gap-2.5 px-4 py-2.5 rounded-[16px] bg-sky-50 text-sky-600 hover:bg-sky-100 font-bold text-[13px] transition-all hover:scale-[1.05] active:scale-95 border border-sky-100/50 shadow-sm">
-            <Video className="w-4.5 h-4.5" /> <span>{t('create_post.live', 'Ao Vivo')}</span>
+          <button type="button" className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-white border border-slate-100 text-slate-500 hover:text-sky-600 hover:bg-sky-50/30 font-black text-[11px] uppercase tracking-widest transition-all duration-300 hover:scale-[1.05] active:scale-95 shadow-sm">
+            <Video className="w-4 h-4" /> <span>{t('create_post.live', 'Live')}</span>
           </button>
           
-          <button type="button" className="flex items-center gap-2.5 px-4 py-2.5 rounded-[16px] bg-amber-50 text-amber-600 hover:bg-amber-100 font-bold text-[13px] transition-all hover:scale-[1.05] active:scale-95 border border-amber-100/50 shadow-sm">
-            <Sparkles className="w-4.5 h-4.5" /> <span>{t('create_post.activity', 'Sentimentos')}</span>
+          <button type="button" className="flex items-center gap-3 px-5 py-3 rounded-2xl bg-white border border-slate-100 text-slate-500 hover:text-amber-600 hover:bg-amber-50/30 font-black text-[11px] uppercase tracking-widest transition-all duration-300 hover:scale-[1.05] active:scale-95 shadow-sm">
+            <Sparkles className="w-4 h-4" /> <span>{t('create_post.activity', 'Feeling')}</span>
           </button>
         </div>
         
-        <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+        <div className="flex items-center gap-4 w-full sm:w-auto justify-end">
           <div className="relative group/privacy">
+            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-primary/60">
+              {visibility === 'public' ? <Globe className="w-4 h-4" /> : <Users className="w-4 h-4" />}
+            </div>
             <select 
               value={visibility} 
               onChange={(e) => setVisibility(e.target.value as any)}
-              className="appearance-none bg-muted/40 hover:bg-muted text-foreground text-[12px] font-black pl-8 pr-8 py-2.5 rounded-2xl border border-border/20 focus:ring-2 focus:ring-primary/20 cursor-pointer transition-all min-w-[110px]"
+              className="appearance-none bg-slate-50 hover:bg-slate-100 text-slate-700 text-[11px] font-black uppercase tracking-widest pl-10 pr-9 py-3 rounded-2xl border border-slate-100 focus:ring-4 focus:ring-primary/5 cursor-pointer transition-all min-w-[130px]"
             >
-              <option value="public">{t('privacy.public', 'Public')}</option>
-              <option value="friends">{t('privacy.friends', 'Friends')}</option>
+              <option value="public">{t('privacy.public', 'World')}</option>
+              <option value="friends">{t('privacy.friends', 'Circle')}</option>
             </select>
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-[#7a63f1]">
-              {visibility === 'public' ? <Globe className="w-4 h-4" /> : <Users className="w-4 h-4" />}
-            </div>
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+            <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-300">
               <ChevronDown className="w-4 h-4" />
             </div>
           </div>
@@ -309,9 +309,9 @@ export function CreatePost({ communityId, communityName }: { communityId?: strin
           <button 
             onClick={handleSubmit} 
             disabled={(!content.trim() && !imageUrl.trim()) || isSubmitting || isUploading} 
-            className="bg-gradient-to-r from-[#7a63f1] to-[#6c55e0] text-white px-10 py-3 rounded-[20px] font-black text-[15px] transition-all disabled:opacity-50 disabled:grayscale shadow-[0_12px_24px_-8px_rgba(122,99,241,0.6)] active:scale-95 whitespace-nowrap hover:shadow-[0_15px_30px_-8px_rgba(122,99,241,0.7)] hover:-translate-y-0.5"
+            className="bg-gradient-to-r from-primary to-indigo-600 text-white px-10 py-3 rounded-[22px] font-black text-[13px] uppercase tracking-[0.15em] transition-all duration-300 disabled:opacity-40 disabled:grayscale shadow-[0_15px_35px_-8px_rgba(122,99,241,0.5)] active:scale-95 whitespace-nowrap hover:shadow-[0_20px_45px_-8px_rgba(122,99,241,0.6)] hover:-translate-y-1"
           >
-            {isSubmitting ? t('create_post.posting', 'Postando...') : t('create_post.button', 'Publicar')}
+            {isSubmitting ? t('create_post.posting', 'Broadcasting...') : t('create_post.button', 'Publish Insight')}
           </button>
         </div>
       </div>

@@ -2,7 +2,7 @@
 // In a dev environment, Next.js might reload this file. 
 // We use a global variable to ensure the store persists across hot reloads.
 
-type SignalingEvent = {
+export type SignalingEvent = {
   type: string;
   payload: any;
   fromId: string;

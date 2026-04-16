@@ -9,7 +9,7 @@ import { PostCard } from '@/components/PostCard';
 
 export default function PostPage() {
   const params = useParams();
-  const postId = params.id as string;
+  const postId = params?.id as string;
   const [post, setPost] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 

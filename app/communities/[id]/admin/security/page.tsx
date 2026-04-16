@@ -7,7 +7,8 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { Lock, Save, Loader2, ShieldCheck, UserCheck } from 'lucide-react';
 
 export default function CommunityAdminSecurityPage() {
-  const { id } = useParams();
+  const params = useParams();
+  const id = params?.id as string;
   const [data, setData] = useState({
     requireApproval: false,
     restrictPosting: false,

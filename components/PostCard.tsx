@@ -680,54 +680,76 @@ export const PostCard = memo(function PostCard({ post: initialPost }: { post: an
   }, [post.createdAt]);
 
   return (
-    <div ref={viewRef} className="bg-white rounded-[32px] shadow-[0_8px_30px_rgba(0,0,0,0.04)] mb-6 border border-border/40 overflow-hidden transition-all hover:shadow-[0_20px_60px_rgba(0,0,0,0.06)] group/card" style={{ contentVisibility: 'auto', containIntrinsicSize: '720px' }}>
+    <div
+      ref={viewRef} 
+      className="bg-white rounded-[40px] shadow-[0_4px_20px_rgba(0,0,0,0.02)] mb-8 border border-slate-100 overflow-hidden transition-all duration-700 hover:shadow-[0_40px_100px_rgba(0,0,0,0.08)] hover:-translate-y-1.5 group/card active:scale-[0.995] relative"
+      style={{ contentVisibility: 'auto', containIntrinsicSize: '800px' }}
+    >
+      {/* Dynamic Animated Border Glow */}
+      <div className="absolute inset-0 border-2 border-transparent group-hover/card:border-primary/10 rounded-[40px] pointer-events-none transition-all duration-700" />
+      
       {sharedPost && (
-        <div className="px-5 py-3 bg-primary/[0.03] border-b border-primary/5 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[11px] font-black text-primary/50 uppercase tracking-[0.15em]">
-            <Share2 className="w-3.5 h-3.5" />
-            <span>{t('post_card.reposted_context', 'Reposte de Aura')}</span>
+        <div className="px-8 py-4 bg-gradient-to-r from-primary/[0.04] via-transparent to-transparent border-b border-primary/5 flex items-center justify-between">
+          <div className="flex items-center gap-3 text-[10px] font-black text-primary/70 uppercase tracking-[0.3em]">
+            <div className="w-8 h-8 rounded-xl bg-white shadow-sm flex items-center justify-center border border-primary/10">
+              <Share2 className="w-4 h-4" />
+            </div>
+            <span>{t('post_card.reposted_context', 'Aura Perspective')}</span>
           </div>
-          <div className="w-1.5 h-1.5 rounded-full bg-primary/20 animate-pulse" />
+          <div className="flex gap-1.5 px-3 py-1.5 bg-white/50 rounded-full border border-primary/5 shadow-sm">
+             <div className="w-1.5 h-1.5 rounded-full bg-primary/40 animate-pulse" />
+             <div className="w-1.5 h-1.5 rounded-full bg-primary/20" />
+          </div>
         </div>
       )}
-      <div className="p-5 pb-3">
-        <div className="flex justify-between items-start mb-4">
-          <div className="flex gap-3 items-center">
-            <Link href={`/profile/${post.authorId}`} className="w-11 h-11 rounded-full bg-gray-200 overflow-hidden shrink-0 ring-2 ring-transparent hover:ring-primary/30 transition-all">
+      <div className="p-8 pb-5">
+        <div className="flex justify-between items-start mb-6">
+          <div className="flex gap-5 items-center">
+            <Link 
+              href={`/profile/${post.authorId}`} 
+              className="relative w-16 h-16 rounded-[24px] bg-slate-100 overflow-hidden shrink-0 ring-4 ring-white shadow-2xl transition-all duration-700 group-hover/card:scale-105 group-hover/card:shadow-primary/10"
+            >
               {post.authorPhoto ? (
                 <img src={post.authorPhoto} alt={post.authorName} loading="lazy" decoding="async" className="w-full h-full object-cover" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-muted-foreground font-medium text-sm">
+                <div className="w-full h-full flex items-center justify-center text-primary/30 font-black text-2xl bg-gradient-to-br from-slate-100 to-slate-200">
                   {post.authorName?.charAt(0).toUpperCase() || 'U'}
                 </div>
               )}
             </Link>
             <div className="flex flex-col">
-              <Link href={`/profile/${post.authorId}`} className="font-semibold text-[15px] text-foreground hover:text-primary transition-colors cursor-pointer leading-tight flex items-center gap-1.5 flex-wrap">
-                <span className="font-black tracking-tight">{post.authorName}</span>
+              <Link href={`/profile/${post.authorId}`} className="group/name flex items-center gap-2 flex-wrap mb-1">
+                <span className="font-ex-bold text-xl text-slate-900 tracking-tight leading-tight group-hover/name:text-primary transition-all duration-300">{post.authorName}</span>
                 {isFresh && !post.isRepost && (
-                  <span className="bg-emerald-500/10 text-emerald-600 text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 uppercase tracking-wider animate-pulse border border-emerald-500/20">
-                    <span className="w-1 h-1 rounded-full bg-emerald-500"></span>
-                    {t('post.new', 'New')}
+                  <span className="bg-blue-600/10 text-blue-600 text-[9px] font-black px-3 py-1 rounded-full flex items-center gap-2 uppercase tracking-[0.15em] border border-blue-600/20 shadow-sm">
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse"></span>
+                    {t('post.new', 'Now')}
                   </span>
                 )}
-                {post.authorName === 'Philippe Boechat' && <CheckCircle className="w-4 h-4 text-blue-500 fill-blue-500/20" />}
+                {post.authorName === 'Philippe Boechat' && (
+                  <div className="relative group/verify">
+                    <CheckCircle className="w-5 h-5 text-indigo-500 fill-indigo-500/10" />
+                  </div>
+                )}
               </Link>
-              <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground mt-0.5">
-                <span className="hover:underline cursor-pointer">
+              <div className="flex items-center gap-3 text-[13px] text-slate-400 font-bold mt-1">
+                <div className="flex items-center gap-2 bg-slate-50 px-3 py-1 rounded-xl border border-slate-100/50 hover:bg-slate-100 transition-colors cursor-pointer group/time">
+                  <Clock size={14} className="opacity-50 group-hover/time:text-primary transition-colors" />
                   <TimeAgo date={date} />
-                </span>
+                </div>
                 {post.communityName && (
                   <>
-                    <span>·</span>
-                    <Link href={`/communities/${post.communityId}`} className="hover:text-primary font-medium flex items-center gap-1">
-                      <Users className="w-3 h-3" />
+                    <span className="opacity-20 text-lg font-light">•</span>
+                    <Link href={`/communities/${post.communityId}`} className="hover:text-primary transition-all flex items-center gap-2 font-black uppercase tracking-widest text-[10px] bg-primary/5 px-3 py-1 rounded-xl border border-primary/10 hover:bg-primary/10">
+                      <Users className="w-3.5 h-3.5" />
                       {post.communityName}
                     </Link>
                   </>
                 )}
-                <span>·</span>
-                {post.visibility === 'public' ? <Globe className="w-3 h-3" /> : post.visibility === 'friends' ? <Users className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                <span className="opacity-20 text-lg font-light">•</span>
+                <div className="flex items-center gap-1.5 opacity-50 bg-slate-50 p-1 rounded-lg">
+                  {post.visibility === 'public' ? <Globe className="w-3.5 h-3.5" /> : post.visibility === 'friends' ? <Users className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                </div>
               </div>
             </div>
           </div>
@@ -767,7 +789,7 @@ export const PostCard = memo(function PostCard({ post: initialPost }: { post: an
         </div>
         
         {displayContent && (
-          <p className="text-[15px] text-foreground mb-2 whitespace-pre-wrap leading-relaxed">
+          <p className="text-[17px] text-slate-800 mb-4 whitespace-pre-wrap leading-[1.6] font-medium tracking-tight px-1">
             {displayContent}
           </p>
         )}
@@ -788,87 +810,76 @@ export const PostCard = memo(function PostCard({ post: initialPost }: { post: an
             })}
           </div>
         )}
+        
         {sharedPost && (
-          <div className="mt-2 mx-1 rounded-[32px] border border-primary/10 bg-gradient-to-br from-slate-50/80 to-primary/[0.02] p-6 group/shared transition-all hover:bg-white hover:border-primary/20 hover:shadow-xl hover:shadow-primary/[0.03] active:scale-[0.99] cursor-pointer ring-1 ring-black/[0.01]">
-            <div className="flex items-center gap-3 mb-5">
+          <div className="mt-4 mx-0 rounded-[36px] border border-slate-100 bg-gradient-to-br from-slate-50/50 to-white p-8 group/shared transition-all hover:bg-white hover:border-primary/20 hover:shadow-[0_20px_60px_rgba(0,0,0,0.04)] cursor-pointer relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
+            
+            <div className="flex items-center gap-4 mb-6 relative">
               <div className="relative">
-                <Link href={`/profile/${sharedPost.authorId}`} className="block w-11 h-11 rounded-full bg-white p-0.5 shadow-sm ring-1 ring-border/50 overflow-hidden shrink-0">
+                <Link href={`/profile/${sharedPost.authorId}`} className="block w-12 h-12 rounded-[18px] bg-white p-0.5 shadow-xl ring-1 ring-slate-100 overflow-hidden shrink-0">
                   {sharedPost.authorPhoto ? (
-                    <img src={sharedPost.authorPhoto} alt={sharedPost.authorName} loading="lazy" decoding="async" className="w-full h-full rounded-full object-cover" />
+                    <img src={sharedPost.authorPhoto} alt={sharedPost.authorName} loading="lazy" decoding="async" className="w-full h-full rounded-[16px] object-cover" />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-muted-foreground font-black text-sm bg-gradient-to-br from-slate-50 to-slate-200 rounded-full">
+                    <div className="w-full h-full flex items-center justify-center text-primary/30 font-black text-sm bg-gradient-to-br from-slate-50 to-slate-200 rounded-[16px]">
                       {sharedPost.authorName?.charAt(0).toUpperCase() || 'U'}
                     </div>
                   )}
                 </Link>
-                <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-primary rounded-full flex items-center justify-center text-[10px] text-white border-2 border-white shadow-sm">
-                  <Share2 className="w-3.5 h-3.5" />
+                <div className="absolute -bottom-1.5 -right-1.5 w-6 h-6 bg-primary rounded-xl flex items-center justify-center text-white border-2 border-white shadow-lg">
+                  <Repeat2 className="w-3.5 h-3.5" />
                 </div>
               </div>
               <div className="min-w-0">
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className="font-black text-[15px] text-foreground hover:underline cursor-pointer tracking-tight">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="font-ex-bold text-[16px] text-slate-900 group-hover/shared:text-primary transition-colors tracking-tight">
                     {sharedPost.authorName}
                   </span>
-                  {isFresh && !post.isRepost && (
-                    <span className="bg-emerald-500/10 text-emerald-600 text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 uppercase tracking-wider animate-pulse border border-emerald-500/20">
-                      <span className="w-1 h-1 rounded-full bg-emerald-500"></span>
-                      {t('post.new', 'New')}
-                    </span>
-                  )}
-                  {sharedPost.isVerified && <CheckCircle className="w-3.5 h-3.5 text-primary fill-primary/10" />}
+                  {sharedPost.isVerified && <CheckCircle className="w-4 h-4 text-blue-500 fill-blue-500/10" />}
                 </div>
-                {sharedPost.communityName ? (
-                  <Link href={`/community/${sharedPost.communityId}`} className="text-[11px] text-primary/70 font-bold hover:underline">
-                    {sharedPost.communityName}
-                  </Link>
-                ) : (
-                  <div className="text-[10px] text-muted-foreground/60 font-black uppercase tracking-wider">
-                    {t('post_card.original_context', 'Original Context')}
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                   {sharedPost.communityName ? (
+                     <div className="text-[10px] text-primary/60 font-black uppercase tracking-widest bg-primary/5 px-2 py-0.5 rounded-lg border border-primary/5">
+                       {sharedPost.communityName}
+                     </div>
+                   ) : (
+                     <div className="text-[10px] text-slate-400 font-bold uppercase tracking-widest opacity-60">
+                       Original Aura Insight
+                     </div>
+                   )}
+                   <span className="text-[10px] text-slate-300">•</span>
+                   <span className="text-[10px] text-slate-400 font-bold"><TimeAgo date={sharedPost.createdAt?.toDate ? sharedPost.createdAt.toDate() : new Date()} /></span>
+                </div>
               </div>
             </div>
 
-            <div className="relative">
-              <div className="absolute -left-3 top-0 bottom-0 w-1 bg-primary/10 rounded-full" />
+            <div className="relative mb-6">
               {sharedPostDisplayContent && (
-                <p className="text-[16px] text-foreground/80 whitespace-pre-wrap leading-relaxed mb-4 font-medium pl-2 tracking-tight">
+                <p className="text-[16px] text-slate-700 whitespace-pre-wrap leading-relaxed font-medium tracking-tight">
                   {sharedPostDisplayContent}
                 </p>
               )}
             </div>
 
-            {Array.isArray(sharedPost.hashtags) && sharedPost.hashtags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2 mb-4 pl-2">
-                {sharedPost.hashtags.map((tag: string) => {
-                  const normalizedTag = tag.startsWith('#') ? tag : `#${tag}`;
-                  return (
-                    <span key={`${sharedPost.id}_${normalizedTag}`} className="text-[11px] font-black text-primary/50 hover:text-primary transition-colors px-2 py-0.5 bg-primary/5 rounded-md">
-                      {normalizedTag}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
-            
             {sharedPost.imageUrl && (
-              <div className="mt-2 rounded-[24px] overflow-hidden border border-black/[0.03] shadow-lg group-hover/shared:shadow-primary/5 transition-all">
-                <img src={sharedPost.imageUrl} alt="Shared content" className="w-full max-h-[340px] object-cover" />
+              <div className="mt-4 rounded-[28px] overflow-hidden border border-slate-100 shadow-2xl shadow-black/5 group-hover/shared:scale-[1.01] transition-transform duration-700">
+                <img src={sharedPost.imageUrl} alt="Shared content" className="w-full max-h-[380px] object-cover" />
               </div>
             )}
             
             <Link 
               href={`/post/${sharedPost.id}`}
-              className="mt-5 pt-4 border-t border-dashed border-border/60 flex items-center justify-between group/link"
+              className="mt-6 pt-5 border-t border-slate-50 flex items-center justify-between group/link"
             >
-              <span className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest flex items-center gap-1.5 group-hover/link:text-primary transition-colors">
-                <Clock className="w-3 h-3" />
-                {t('post_card.view_full_thread', 'View full conversation')}
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2 group-hover/link:text-primary transition-colors">
+                <div className="w-1.5 h-1.5 rounded-full bg-slate-300 group-hover/link:bg-primary transition-colors" />
+                {t('post_card.view_full_thread', 'Explore thread history')}
               </span>
-              <div className="flex -space-x-2">
+              <div className="flex -space-x-3">
                 {[1, 2, 3].map(i => (
-                  <div key={i} className="w-6 h-6 rounded-full bg-slate-100 border-2 border-white shadow-sm" />
+                  <div key={i} className="w-7 h-7 rounded-xl bg-slate-50 border-2 border-white shadow-xl flex items-center justify-center overflow-hidden">
+                     <div className="w-full h-full bg-gradient-to-br from-slate-100 to-slate-200" />
+                  </div>
                 ))}
               </div>
             </Link>
@@ -917,46 +928,50 @@ export const PostCard = memo(function PostCard({ post: initialPost }: { post: an
         />
       )}
 
-      <div className="px-5 py-3">
-        <div className="flex justify-between text-[13px] text-muted-foreground pb-3 mb-2 border-b border-border/50">
-          <div className="flex items-center gap-1.5 cursor-pointer hover:text-primary transition-colors">
+      <div className="px-8 py-5 bg-slate-50/30">
+        <div className="flex justify-between items-center text-[12px] text-slate-400 pb-5 mb-4 border-b border-slate-100/60 font-black uppercase tracking-[0.1em]">
+          <div className="flex items-center gap-2 group/likes cursor-pointer">
             {topPostReactions.length > 0 ? (
-              <div className="flex -space-x-1">
+              <div className="flex -space-x-2">
                 {topPostReactions.map((r, i) => (
-                  <div key={r?.id} style={{ zIndex: 30 - i * 10 }} className={`w-5 h-5 rounded-full ${r?.bgColor} flex items-center justify-center text-[11px] ring-2 ring-white relative`}>
+                  <div key={r?.id} style={{ zIndex: 30 - i * 10 }} className={`w-6 h-6 rounded-lg ${r?.bgColor} flex items-center justify-center text-[12px] ring-2 ring-white shadow-sm relative group-hover/likes:scale-110 transition-transform`}>
                     {r?.icon}
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+              <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center text-primary shadow-sm ring-2 ring-white">
                 <Heart className="w-3 h-3 fill-current" />
               </div>
             )}
-            <span className="font-medium">{post.likesCount || 0}</span>
+            <span className="group-hover/likes:text-primary transition-colors">{post.likesCount || 0} {t('post.reactions', 'Connections')}</span>
           </div>
-          <div className="flex gap-4 font-medium">
+          <div className="flex gap-5">
             <span 
-              className="cursor-pointer hover:text-foreground transition-colors"
+              className="cursor-pointer hover:text-slate-600 transition-colors flex items-center gap-1.5"
               onClick={() => setShowComments(!showComments)}
             >
+              <div className="w-1 h-1 rounded-full bg-slate-300" />
               {post.commentsCount || 0} {t('post.comments', 'Comments')}
             </span>
-            <span className="cursor-pointer hover:text-foreground transition-colors">{post.sharesCount || 0} {t('post.shares', 'Shares')}</span>
+            <span className="cursor-pointer hover:text-slate-600 transition-colors flex items-center gap-1.5">
+              <div className="w-1 h-1 rounded-full bg-slate-300" />
+              {post.sharesCount || 0} {t('post.shares', 'Shares')}
+            </span>
           </div>
         </div>
         
-        <div className="flex justify-between pt-1">
+        <div className="flex justify-between items-center">
           <div className="flex gap-2">
-            <div className="relative group">
-              {/* Reaction Popover */}
-              <div className="absolute bottom-full left-0 pb-2 hidden group-hover:block z-50">
-                <div className="bg-white border border-border/50 shadow-lg rounded-full px-2 py-1 flex gap-1 animate-in fade-in slide-in-from-bottom-2 duration-200">
+            <div className="relative group/react">
+              {/* Reaction Popover - Ultra Premium Design */}
+              <div className="absolute bottom-full left-0 pb-4 hidden group-hover/react:block z-50 animate-in fade-in slide-in-from-bottom-3 duration-300">
+                <div className="bg-white/90 backdrop-blur-xl border border-white shadow-2xl rounded-[24px] p-2 flex gap-1.5">
                   {REACTIONS.map(r => (
                     <button
                       key={r.id}
                       onClick={(e) => { e.stopPropagation(); handlePostReaction(r.id); }}
-                      className="w-10 h-10 hover:scale-125 transition-transform origin-bottom flex items-center justify-center text-2xl"
+                      className="w-12 h-12 hover:scale-125 hover:-translate-y-2 transition-all duration-300 origin-bottom flex items-center justify-center text-3xl rounded-xl hover:bg-slate-50"
                       title={r.label}
                     >
                       {r.icon}
@@ -967,47 +982,59 @@ export const PostCard = memo(function PostCard({ post: initialPost }: { post: an
               
               <button 
                 onClick={() => activePostReaction ? handlePostReaction(activePostReaction.id) : handlePostReaction('like')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl font-medium text-[14px] transition-colors ${
-                  activePostReaction ? `${activePostReaction.color} ${activePostReaction.bgColor}` : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                className={`group flex items-center gap-2.5 px-5 py-2.5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all duration-300 ${
+                  activePostReaction 
+                    ? `${activePostReaction.color} ${activePostReaction.bgColor} shadow-sm shadow-primary/5 ring-1 ring-primary/10` 
+                    : 'text-slate-500 hover:bg-white hover:text-primary hover:shadow-xl hover:shadow-primary/5 hover:ring-1 hover:ring-primary/5 bg-white shadow-sm border border-slate-100'
                 }`}
               >
                 {activePostReaction ? (
-                  <span className="text-lg leading-none">{activePostReaction.icon}</span>
+                  <span className="text-xl leading-none scale-110 group-active:scale-90 transition-transform">{activePostReaction.icon}</span>
                 ) : (
-                  <ThumbsUp className="w-5 h-5" />
+                  <ThumbsUp className="w-4 h-4 group-hover:scale-110 transition-transform" />
                 )}
-                {activePostReaction ? t(`reaction.${activePostReaction.id}`, activePostReaction.label) : t('post.like', 'Like')}
+                {activePostReaction ? t(`reaction.${activePostReaction.id}`, activePostReaction.label) : t('post.like', 'Insight')}
               </button>
             </div>
 
             <button 
               onClick={() => setShowComments(!showComments)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground font-medium text-[14px] transition-colors"
+              className="flex items-center gap-2.5 px-5 py-2.5 rounded-2xl bg-white border border-slate-100 text-slate-500 hover:text-primary hover:shadow-xl hover:shadow-primary/5 hover:ring-1 hover:ring-primary/5 font-black text-[11px] uppercase tracking-widest transition-all duration-300 group"
             >
-              <MessageCircle className="w-5 h-5" /> {t('post.comment', 'Comment')}
+              <MessageCircle className="w-4 h-4 group-hover:scale-110 transition-transform" /> {t('post.comment', 'Clarify')}
             </button>
           </div>
+
           <div className="flex gap-2">
             <div className="relative">
               <button 
                 onClick={handleShare}
                 disabled={isSharing}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl hover:bg-muted text-muted-foreground hover:text-foreground font-medium text-[14px] transition-colors disabled:opacity-50"
+                className="flex items-center gap-2.5 px-5 py-2.5 rounded-2xl bg-white border border-slate-100 text-slate-500 hover:text-primary hover:shadow-xl hover:shadow-primary/5 hover:ring-1 hover:ring-primary/5 font-black text-[11px] uppercase tracking-widest transition-all duration-300 group disabled:opacity-50"
               >
-                <Share2 className="w-5 h-5" /> {isSharing ? '...' : t('post.share', 'Share')}
+                <Share2 className="w-4 h-4 group-hover:rotate-12 transition-transform" /> {isSharing ? '...' : t('post.share', 'Expand')}
               </button>
               {showShareMenu && (
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setShowShareMenu(false)}></div>
-                  <div className="absolute right-0 bottom-full mb-2 w-56 rounded-2xl border border-border/50 bg-white shadow-xl p-2 z-20">
-                    <button onClick={handleRepost} className="w-full text-left px-3 py-2 text-sm rounded-xl hover:bg-muted transition-colors flex items-center gap-2">
-                      <Repeat2 className="w-4 h-4" /> {t('post_card.share_to_feed', 'Share to my feed')}
+                  <div className="absolute right-0 bottom-full mb-4 w-64 rounded-3xl border border-white bg-white/90 backdrop-blur-xl shadow-2xl p-2.5 z-20 animate-in zoom-in-95 fade-in duration-300">
+                    <button onClick={handleRepost} className="w-full text-left px-4 py-3 text-[11px] font-black uppercase tracking-widest rounded-2xl hover:bg-primary/5 hover:text-primary transition-all flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-primary/5 flex items-center justify-center">
+                        <Repeat2 className="w-4 h-4" />
+                      </div>
+                      {t('post_card.share_to_feed', 'Echo Insight')}
                     </button>
-                    <button onClick={handleExternalShare} className="w-full text-left px-3 py-2 text-sm rounded-xl hover:bg-muted transition-colors flex items-center gap-2">
-                      <Send className="w-4 h-4" /> {t('post_card.share_externally', 'Share externally')}
+                    <button onClick={handleExternalShare} className="w-full text-left px-4 py-3 text-[11px] font-black uppercase tracking-widest rounded-2xl hover:bg-blue-50 hover:text-blue-600 transition-all flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center">
+                        <Send className="w-4 h-4" />
+                      </div>
+                      {t('post_card.share_externally', 'Broadcast Out')}
                     </button>
-                    <button onClick={handleCopyShareLink} className="w-full text-left px-3 py-2 text-sm rounded-xl hover:bg-muted transition-colors flex items-center gap-2">
-                      <Link2 className="w-4 h-4" /> {t('post_card.copy_link', 'Copy link')}
+                    <button onClick={handleCopyShareLink} className="w-full text-left px-4 py-3 text-[11px] font-black uppercase tracking-widest rounded-2xl hover:bg-slate-50 hover:text-slate-900 transition-all flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-slate-50 flex items-center justify-center">
+                        <Link2 className="w-4 h-4" />
+                      </div>
+                      {t('post_card.copy_link', 'Secure URL')}
                     </button>
                   </div>
                 </>
@@ -1015,11 +1042,13 @@ export const PostCard = memo(function PostCard({ post: initialPost }: { post: an
             </div>
             <button 
               onClick={handleBookmark}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-                isBookmarked ? 'bg-primary/10 text-primary' : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+              className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 shadow-sm border ${
+                isBookmarked 
+                  ? 'bg-amber-50 text-amber-500 border-amber-100 shadow-amber-100/20' 
+                  : 'bg-white border-slate-100 text-slate-400 hover:text-amber-500 hover:border-amber-100 hover:shadow-xl hover:shadow-amber-100/10'
               }`}
             >
-              <Bookmark className={`w-5 h-5 ${isBookmarked ? 'fill-current' : ''}`} />
+              <Bookmark className={`w-5 h-5 ${isBookmarked ? 'fill-current animate-bounce' : 'group-hover:scale-110 transition-transform'}`} />
             </button>
           </div>
         </div>
