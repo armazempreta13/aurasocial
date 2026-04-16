@@ -1,0 +1,378 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { X, Shield, Users, Trash2, UserPlus, UserMinus, Star, ShieldAlert, Loader2, Settings, Globe, Lock } from 'lucide-react';
+import { db } from '@/firebase';
+import { doc, updateDoc, deleteDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { useRouter } from 'next/navigation';
+
+interface CommunitySettingsModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  community: any;
+}
+
+export function CommunitySettingsModal({ isOpen, onClose, community }: CommunitySettingsModalProps) {
+  const router = useRouter();
+  const [activeTab, setActiveTab] = useState<'general' | 'members' | 'moderation'>('general');
+  const [members, setMembers] = useState<any[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [reports, setReports] = useState<any[]>([]);
+  const [loadingReports, setLoadingReports] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [formData, setFormData] = useState({
+    name: community?.name || '',
+    description: community?.description || '',
+    type: community?.type || 'Public'
+  });
+
+  const fetchMembers = useCallback(async () => {
+    setLoadingMembers(true);
+    try {
+      // Fetch user details for all members
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('uid', 'in', community.members.slice(0, 10))); // Limit to first 10 for now
+      const snapshot = await getDocs(q);
+      const membersData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        role: community.roles?.[doc.id] || 'member'
+      }));
+      setMembers(membersData);
+    } catch (error) {
+      console.error('Error fetching members:', error);
+    } finally {
+      setLoadingMembers(false);
+    }
+  }, [community.members, community.roles]);
+
+  useEffect(() => {
+    if (isOpen) {
+      if (activeTab === 'members') fetchMembers();
+      if (activeTab === 'moderation') {
+        const fetchReports = async () => {
+          setLoadingReports(true);
+          try {
+            const q = query(
+              collection(db, 'reports'), 
+              where('communityId', '==', community.id),
+              where('status', '==', 'pending')
+            );
+            const snapshot = await getDocs(q);
+            const reportsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setReports(reportsData);
+          } catch (error) {
+            console.error('Error fetching reports:', error);
+          } finally {
+            setLoadingReports(false);
+          }
+        };
+        fetchReports();
+      }
+    }
+  }, [isOpen, activeTab, fetchMembers, community.id]);
+
+  const handleUpdateRole = async (userId: string, newRole: string | null) => {
+    const communityRef = doc(db, 'communities', community.id);
+    try {
+      const updatedRoles = { ...community.roles };
+      if (newRole) {
+        updatedRoles[userId] = newRole;
+      } else {
+        delete updatedRoles[userId];
+      }
+      await updateDoc(communityRef, { roles: updatedRoles });
+      setMembers(prev => prev.map(m => m.id === userId ? { ...m, role: newRole || 'member' } : m));
+    } catch (error) {
+      console.error('Error updating role:', error);
+    }
+  };
+
+  const handleKickMember = async (userId: string) => {
+    if (userId === community.creatorId) return;
+    const communityRef = doc(db, 'communities', community.id);
+    try {
+      const updatedMembers = community.members.filter((id: string) => id !== userId);
+      const updatedRoles = { ...community.roles };
+      delete updatedRoles[userId];
+      
+      await updateDoc(communityRef, { 
+        members: updatedMembers,
+        memberCount: updatedMembers.length,
+        roles: updatedRoles
+      });
+      setMembers(prev => prev.filter(m => m.id !== userId));
+    } catch (error) {
+      console.error('Error kicking member:', error);
+    }
+  };
+
+  const handleUpdateCommunity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    try {
+      const communityRef = doc(db, 'communities', community.id);
+      await updateDoc(communityRef, formData);
+      onClose();
+    } catch (error) {
+      console.error('Error updating community:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteCommunity = async () => {
+    if (!confirm('Are you sure you want to delete this community? This action cannot be undone.')) return;
+    
+    try {
+      await deleteDoc(doc(db, 'communities', community.id));
+      router.push('/communities');
+    } catch (error) {
+      console.error('Error deleting community:', error);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-[700px] max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+        
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border/50">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+              <Settings className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-foreground">Community Settings</h2>
+              <p className="text-xs text-muted-foreground">{community.name}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-muted/50 hover:bg-muted flex items-center justify-center text-muted-foreground transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex px-6 border-b border-border/50 bg-gray-50/50">
+          <button 
+            onClick={() => setActiveTab('general')}
+            className={`px-6 py-3 text-sm font-bold transition-all relative ${activeTab === 'general' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            General
+            {activeTab === 'general' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-full"></div>}
+          </button>
+          <button 
+            onClick={() => setActiveTab('members')}
+            className={`px-6 py-3 text-sm font-bold transition-all relative ${activeTab === 'members' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            Members & Roles
+            {activeTab === 'members' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-full"></div>}
+          </button>
+          <button 
+            onClick={() => setActiveTab('moderation')}
+            className={`px-6 py-3 text-sm font-bold transition-all relative ${activeTab === 'moderation' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+          >
+            Moderation
+            {activeTab === 'moderation' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-full"></div>}
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="overflow-y-auto p-6 flex-1 custom-scrollbar">
+          {activeTab === 'general' ? (
+            <form id="community-settings-form" onSubmit={handleUpdateCommunity} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-foreground">Community Name</label>
+                <input 
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full bg-muted/30 border border-border/50 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-foreground">Description</label>
+                <textarea 
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  rows={4}
+                  className="w-full bg-muted/30 border border-border/50 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all resize-none"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-foreground">Privacy Type</label>
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, type: 'Public' })}
+                    className={`flex items-center gap-3 p-4 rounded-2xl border-2 transition-all ${formData.type === 'Public' ? 'border-primary bg-primary/5' : 'border-border/50 hover:border-border'}`}
+                  >
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${formData.type === 'Public' ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'}`}>
+                      <Globe className="w-5 h-5" />
+                    </div>
+                    <div className="text-left">
+                      <p className="font-bold text-sm">Public</p>
+                      <p className="text-xs text-muted-foreground">Anyone can join</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, type: 'Private' })}
+                    className={`flex items-center gap-3 p-4 rounded-2xl border-2 transition-all ${formData.type === 'Private' ? 'border-primary bg-primary/5' : 'border-border/50 hover:border-border'}`}
+                  >
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${formData.type === 'Private' ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'}`}>
+                      <Lock className="w-5 h-5" />
+                    </div>
+                    <div className="text-left">
+                      <p className="font-bold text-sm">Private</p>
+                      <p className="text-xs text-muted-foreground">Approval required</p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-6 border-t border-border/50">
+                <h4 className="text-red-500 font-bold mb-2 flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4" /> Danger Zone
+                </h4>
+                <p className="text-xs text-muted-foreground mb-4">Once you delete a community, there is no going back. Please be certain.</p>
+                <button 
+                  type="button"
+                  onClick={handleDeleteCommunity}
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-xl border border-red-200 text-red-500 font-bold hover:bg-red-50 transition-all text-sm"
+                >
+                  <Trash2 className="w-4 h-4" /> Delete Community
+                </button>
+              </div>
+            </form>
+          ) : activeTab === 'members' ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-foreground">Community Members</h3>
+                <span className="text-xs text-muted-foreground">{community.memberCount} total members</span>
+              </div>
+              
+              {loadingMembers ? (
+                <div className="flex flex-col items-center py-12 text-muted-foreground">
+                  <Loader2 className="w-8 h-8 animate-spin mb-2" />
+                  <p className="text-sm">Loading members...</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {members.map((member) => (
+                    <div key={member.id} className="flex items-center justify-between p-3 rounded-2xl hover:bg-muted/30 transition-all group border border-transparent hover:border-border/30">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-muted overflow-hidden">
+                          {member.photoURL ? (
+                            <img src={member.photoURL} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-muted-foreground font-bold">
+                              {member.displayName?.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-bold text-sm text-foreground">{member.displayName}</p>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                              member.role === 'admin' ? 'bg-primary/10 text-primary' :
+                              member.role === 'moderator' ? 'bg-blue-100 text-blue-600' :
+                              member.role === 'helper' ? 'bg-green-100 text-green-600' :
+                              'bg-gray-100 text-gray-500'
+                            }`}>
+                              {member.role}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {member.id !== community.creatorId && (
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <select 
+                            value={member.role}
+                            onChange={(e) => handleUpdateRole(member.id, e.target.value)}
+                            className="text-xs bg-white border border-border/50 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          >
+                            <option value="member">Member</option>
+                            <option value="helper">Helper</option>
+                            <option value="moderator">Moderator</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                          <button 
+                            onClick={() => handleKickMember(member.id)}
+                            className="p-1.5 text-muted-foreground hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                            title="Kick Member"
+                          >
+                            <UserMinus className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-foreground">Pending Reports</h3>
+                <span className="text-xs text-muted-foreground">{reports.length} report(s)</span>
+              </div>
+              
+              {loadingReports ? (
+                <div className="flex flex-col items-center py-12 text-muted-foreground">
+                  <Loader2 className="w-8 h-8 animate-spin mb-2" />
+                  <p className="text-sm">Loading reports...</p>
+                </div>
+              ) : reports.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground bg-muted/30 rounded-2xl">
+                  <ShieldAlert className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">No pending reports.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {reports.map((report) => (
+                    <div key={report.id} className="p-3 rounded-2xl border border-border/50 hover:border-border transition-all">
+                      <p className="text-sm text-foreground mb-1"><span className="font-bold">Post ID:</span> {report.postId}</p>
+                      <p className="text-sm text-muted-foreground mb-2"><span className="font-bold">Reason:</span> {report.reason}</p>
+                      <div className="flex gap-2">
+                        <button className="text-xs bg-red-100 text-red-600 px-3 py-1.5 rounded-lg font-bold hover:bg-red-200">Remove Post</button>
+                        <button className="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-lg font-bold hover:bg-gray-200">Ignore</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 border-t border-border/50 bg-gray-50 flex justify-end gap-3">
+          <button 
+            type="button"
+            onClick={onClose}
+            className="px-6 py-2.5 rounded-xl font-semibold text-[14px] text-foreground hover:bg-muted transition-colors"
+          >
+            Cancel
+          </button>
+          {activeTab === 'general' && (
+            <button 
+              type="submit"
+              form="community-settings-form"
+              disabled={isSaving}
+              className="px-8 py-2.5 rounded-xl font-semibold text-[14px] bg-primary text-white hover:bg-primary/90 transition-colors disabled:opacity-50"
+            >
+              {isSaving ? 'Saving...' : 'Save Changes'}
+            </button>
+          )}
+        </div>
+
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,206 @@
+const fs = require('fs');
+const path = require('path');
+
+const enPath = path.join(__dirname, 'lib/locales/en/common.json');
+const ptPath = path.join(__dirname, 'lib/locales/pt-BR/common.json');
+
+const enJson = JSON.parse(fs.readFileSync(enPath, 'utf-8'));
+const ptJson = JSON.parse(fs.readFileSync(ptPath, 'utf-8'));
+
+const newEnKeys = {
+  "bookmarks_page": {
+    "title": "Saved Items",
+    "subtitle": "Posts you've saved for later",
+    "empty_title": "No saved items yet",
+    "empty_desc": "Save posts to easily find them later. They'll appear here."
+  },
+  "explore_page": {
+    "search_results": "Search results for \"{{query}}\"",
+    "title": "Explore",
+    "search_subtitle": "Finding the best content and people for you",
+    "subtitle": "Discover what's happening in Aura",
+    "tab_all": "Top",
+    "tab_people": "People",
+    "tab_posts": "Posts",
+    "trending": "Trending Topics",
+    "people": "People",
+    "loading": "Loading people...",
+    "member": "Aura Member",
+    "no_people_found": "No people found matching \"{{query}}\"",
+    "recommended": "Recommended for you",
+    "posts": "Posts"
+  },
+  "notifications_page": {
+    "title": "Notifications",
+    "subtitle": "Stay updated with your community",
+    "mark_all": "Mark all as read",
+    "empty_title": "No notifications yet",
+    "empty_desc": "When people interact with you or your posts, you'll see it here.",
+    "liked": "liked your post",
+    "commented": "commented on your post",
+    "followed": "started following you",
+    "sent_request": "sent you a friend request",
+    "accepted_request": "accepted your friend request",
+    "shared": "shared your post",
+    "default_msg": "sent you a notification",
+    "your_post": "your post"
+  },
+  "settings_page": {
+    "title": "Settings",
+    "subtitle": "Manage your account and preferences",
+    "tab_account": "Account",
+    "tab_privacy": "Privacy",
+    "tab_notifications": "Notifications",
+    "tab_display": "Display",
+    "account_info": "Account Information",
+    "display_name": "Display Name",
+    "email": "Email Address",
+    "security": "Security",
+    "change_pwd": "Change Password",
+    "change_pwd_desc": "Update your account password regularly",
+    "privacy_title": "Privacy Settings",
+    "public_profile": "Public Profile",
+    "public_profile_desc": "Allow anyone to see your profile and posts",
+    "direct_messages": "Direct Messages",
+    "direct_messages_desc": "Allow people you don't follow to message you",
+    "activity_status": "Activity Status",
+    "activity_status_desc": "Show when you're active on Aura",
+    "who_can_request": "Who can send friend requests",
+    "who_can_request_desc": "Control who is allowed to initiate friendship with you.",
+    "everyone": "Everyone",
+    "same_communities": "People in shared communities",
+    "friends_of_friends": "Friends of friends",
+    "nobody": "Nobody",
+    "who_can_message": "Who can message me",
+    "who_can_message_desc": "Route unexpected conversations away from your main inbox.",
+    "friends_only": "Friends only",
+    "friends_and_interests": "Friends and interest contacts",
+    "who_can_invite": "Who can invite me to communities",
+    "who_can_invite_desc": "Keep community invites useful instead of noisy.",
+    "friends": "Friends",
+    "close_friends": "Close friends only",
+    "who_can_see_friends_posts": "Who can see my friends-only posts",
+    "who_can_see_friends_posts_desc": "Use a tighter audience for personal content.",
+    "all_friends": "All friends",
+    "who_can_see_friend_list": "Who can see my friend list",
+    "who_can_see_friend_list_desc": "Hide your social graph if you want a quieter profile.",
+    "only_me": "Only me",
+    "allow_msg_in_requests": "Allow a message in friend requests",
+    "allow_msg_in_requests_desc": "People can add short context when requesting friendship.",
+    "show_mutual": "Show mutual friends and communities",
+    "show_mutual_desc": "Use shared context to improve suggestions and trust.",
+    "appearance": "Appearance",
+    "light_mode": "Light Mode",
+    "dark_mode": "Dark Mode",
+    "focus_mode": "Focus Mode",
+    "focus_mode_enable": "Enable Focus Mode",
+    "focus_mode_desc": "Hide sidebars and distractions for a cleaner experience",
+    "saved": "Changes saved successfully",
+    "cancel": "Cancel",
+    "saving": "Saving...",
+    "save": "Save Changes"
+  }
+};
+
+const newPtKeys = {
+  "bookmarks_page": {
+    "title": "Itens Salvos",
+    "subtitle": "Posts que você salvou para ver depois",
+    "empty_title": "Nenhum item salvo ainda",
+    "empty_desc": "Salve posts para encontrá-los facilmente depois. Eles aparecerão aqui."
+  },
+  "explore_page": {
+    "search_results": "Resultados da busca por \"{{query}}\"",
+    "title": "Explorar",
+    "search_subtitle": "Encontrando o melhor conteúdo e pessoas para você",
+    "subtitle": "Descubra o que está acontecendo na Aura",
+    "tab_all": "Todos",
+    "tab_people": "Pessoas",
+    "tab_posts": "Posts",
+    "trending": "Tópicos em Alta",
+    "people": "Pessoas",
+    "loading": "Carregando pessoas...",
+    "member": "Membro Aura",
+    "no_people_found": "Nenhuma pessoa encontrada com \"{{query}}\"",
+    "recommended": "Recomendado para você",
+    "posts": "Posts"
+  },
+  "notifications_page": {
+    "title": "Notificações",
+    "subtitle": "Fique atualizado com sua comunidade",
+    "mark_all": "Marcar todas como lidas",
+    "empty_title": "Nenhuma notificação ainda",
+    "empty_desc": "Quando as pessoas interagirem com você ou seus posts, você verá aqui.",
+    "liked": "curtiu o seu post",
+    "commented": "comentou no seu post",
+    "followed": "começou a seguir você",
+    "sent_request": "enviou uma solicitação de amizade",
+    "accepted_request": "aceitou sua solicitação de amizade",
+    "shared": "compartilhou o seu post",
+    "default_msg": "enviou uma notificação",
+    "your_post": "seu post"
+  },
+  "settings_page": {
+    "title": "Configurações",
+    "subtitle": "Gerencie sua conta e preferências",
+    "tab_account": "Conta",
+    "tab_privacy": "Privacidade",
+    "tab_notifications": "Notificações",
+    "tab_display": "Tela",
+    "account_info": "Informações da Conta",
+    "display_name": "Nome de Exibição",
+    "email": "Endereço de E-mail",
+    "security": "Segurança",
+    "change_pwd": "Alterar Senha",
+    "change_pwd_desc": "Atualize a senha da sua conta regularmente",
+    "privacy_title": "Configurações de Privacidade",
+    "public_profile": "Perfil Público",
+    "public_profile_desc": "Permitir que qualquer pessoa veja seu perfil e posts",
+    "direct_messages": "Mensagens Diretas",
+    "direct_messages_desc": "Permitir que pessoas que você não segue lhe enviem mensagens",
+    "activity_status": "Status de Atividade",
+    "activity_status_desc": "Mostrar quando você está ativo na Aura",
+    "who_can_request": "Quem pode enviar solicitações de amizade",
+    "who_can_request_desc": "Controle quem tem permissão para iniciar uma amizade com você.",
+    "everyone": "Todos",
+    "same_communities": "Pessoas em comunidades em comum",
+    "friends_of_friends": "Amigos de amigos",
+    "nobody": "Ninguém",
+    "who_can_message": "Quem pode me enviar mensagens",
+    "who_can_message_desc": "Mantenha as conversas indesejadas longe da sua caixa de entrada principal.",
+    "friends_only": "Apenas amigos",
+    "friends_and_interests": "Amigos e contatos de interesse",
+    "who_can_invite": "Quem pode me convidar para comunidades",
+    "who_can_invite_desc": "Mantenha os convites de comunidades úteis e evite SPAM.",
+    "friends": "Amigos",
+    "close_friends": "Apenas amigos próximos",
+    "who_can_see_friends_posts": "Quem pode ver meus posts exclusivos para amigos",
+    "who_can_see_friends_posts_desc": "Use um público menor para conteúdo pessoal.",
+    "all_friends": "Todos os amigos",
+    "who_can_see_friend_list": "Quem pode ver minha lista de amigos",
+    "who_can_see_friend_list_desc": "Oculte seu gráfico social caso prefira um perfil menos exposto.",
+    "only_me": "Apenas eu",
+    "allow_msg_in_requests": "Permitir mensagens em solicitações de amizade",
+    "allow_msg_in_requests_desc": "As pessoas podem adicionar contexto ao solicitar amizade.",
+    "show_mutual": "Mostrar amigos e comunidades em comum",
+    "show_mutual_desc": "Use contexto em comum para melhorar as sugestões.",
+    "appearance": "Aparência",
+    "light_mode": "Modo Claro",
+    "dark_mode": "Modo Escuro",
+    "focus_mode": "Modo Foco",
+    "focus_mode_enable": "Ativar Modo Foco",
+    "focus_mode_desc": "Ocultar barras laterais e distrações para uma experiência mais limpa",
+    "saved": "Alterações salvas com sucesso",
+    "cancel": "Cancelar",
+    "saving": "Salvando...",
+    "save": "Salvar Alterações"
+  }
+};
+
+Object.assign(enJson, newEnKeys);
+Object.assign(ptJson, newPtKeys);
+
+fs.writeFileSync(enPath, JSON.stringify(enJson, null, 2), 'utf-8');
+fs.writeFileSync(ptPath, JSON.stringify(ptJson, null, 2), 'utf-8');
+
+console.log('Translations updated successfully!');

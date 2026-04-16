@@ -1,0 +1,211 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the Aura social network.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "bio": { "type": "string" },
+        "location": { "type": "string" },
+        "education": { "type": "string" },
+        "work": { "type": "string" },
+        "relationship": { "type": "string" },
+        "interests": { "type": "array", "items": { "type": "string" } },
+        "followersCount": { "type": "number" },
+        "followingCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "createdAt"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "A post created by a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorPhoto": { "type": "string" },
+        "content": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "hashtags": { "type": "array", "items": { "type": "string" } },
+        "visibility": { "type": "string", "enum": ["public", "friends", "interests"] },
+        "targetInterests": { "type": "array", "items": { "type": "string" } },
+        "communityId": { "type": "string" },
+        "communityName": { "type": "string" },
+        "likesCount": { "type": "number" },
+        "reactionCounts": { "type": "object", "additionalProperties": { "type": "number" } },
+        "commentsCount": { "type": "number" },
+        "sharesCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorId", "authorName", "content", "visibility", "createdAt"]
+    },
+    "Community": {
+      "title": "Community",
+      "description": "A group or community of users.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "image": { "type": "string" },
+        "type": { "type": "string", "enum": ["Public", "Private"] },
+        "creatorId": { "type": "string" },
+        "members": { "type": "array", "items": { "type": "string" } },
+        "memberCount": { "type": "number" },
+        "roles": { "type": "object", "description": "Map of userId to role (admin, moderator, helper)" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "description", "type", "creatorId", "members", "memberCount", "createdAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "A comment on a post.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "postId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "authorPhoto": { "type": "string" },
+        "content": { "type": "string" },
+        "replyToId": { "type": "string" },
+        "replyToName": { "type": "string" },
+        "likesCount": { "type": "number" },
+        "reactionCounts": { "type": "object", "additionalProperties": { "type": "number" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "authorId", "authorName", "content", "createdAt"]
+    },
+    "Like": {
+      "title": "Like",
+      "description": "A like on a post or comment.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "postId": { "type": "string" },
+        "commentId": { "type": "string" },
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["like", "love", "insightful", "funny"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["postId", "userId", "type", "createdAt"]
+    },
+    "Follow": {
+      "title": "Follow",
+      "description": "A follow relationship between users.",
+      "type": "object",
+      "properties": {
+        "followerId": { "type": "string" },
+        "followingId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["followerId", "followingId", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "A notification for a user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "actorId": { "type": "string" },
+        "actorName": { "type": "string" },
+        "actorPhoto": { "type": "string" },
+        "type": { "type": "string", "enum": ["like", "comment", "follow"] },
+        "postId": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "actorId", "type", "read", "createdAt"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A conversation between users.",
+      "type": "object",
+      "properties": {
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "lastMessage": { "type": "string" },
+        "lastMessageTime": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["participants", "createdAt", "updatedAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A message in a chat.",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["chatId", "senderId", "participants", "text", "createdAt"]
+    },
+    "Interaction": {
+      "title": "Interaction",
+      "description": "Track user interactions for reputation",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["view", "save", "share", "comment", "report"] },
+        "fromUid": { "type": "string" },
+        "toUid": { "type": "string" },
+        "postId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["type", "fromUid", "toUid", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles."
+    },
+    "posts/{postId}": {
+      "schema": { "$ref": "#/entities/Post" },
+      "description": "Posts created by users."
+    },
+    "comments/{commentId}": {
+      "schema": { "$ref": "#/entities/Comment" },
+      "description": "Comments on posts."
+    },
+    "likes/{likeId}": {
+      "schema": { "$ref": "#/entities/Like" },
+      "description": "Likes on posts."
+    },
+    "follows/{followId}": {
+      "schema": { "$ref": "#/entities/Follow" },
+      "description": "Follow relationships."
+    },
+    "notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "User notifications."
+    },
+    "chats/{chatId}": {
+      "schema": { "$ref": "#/entities/Chat" },
+      "description": "Chat conversations."
+    },
+    "messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Messages within chats."
+    },
+    "communities/{communityId}": {
+      "schema": { "$ref": "#/entities/Community" },
+      "description": "User communities."
+    },
+    "interactions/{interactionId}": {
+      "schema": { "$ref": "#/entities/Interaction" },
+      "description": "Tracking interactions for reputation."
+    }
+  }
+}

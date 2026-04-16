@@ -1,0 +1,445 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function uidUnchanged(field) {
+      return !(field in request.resource.data) || request.resource.data[field] == request.auth.uid;
+    }
+
+    function uidNotModified(field) {
+      return !(field in request.resource.data) || request.resource.data[field] == resource.data[field];
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidString(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+             request.resource.data[field].size() >= minLen &&
+             request.resource.data[field].size() <= maxLen;
+    }
+
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             request.resource.data[field] == null ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidOptionalPositive(field) {
+      return !(field in request.resource.data) ||
+             request.resource.data[field] == null ||
+             (request.resource.data[field] is number && request.resource.data[field] >= 0);
+    }
+
+    function isValidList(listField, maxSize) {
+      return request.resource.data[listField] is list && request.resource.data[listField].size() <= maxSize;
+    }
+
+    function isValidOptionalList(listField, maxSize) {
+      return !(listField in request.resource.data) ||
+             request.resource.data[listField] == null ||
+             (request.resource.data[listField] is list && request.resource.data[listField].size() <= maxSize);
+    }
+
+    function isValidReactionCounts() {
+      return !('reactionCounts' in request.resource.data) ||
+             (request.resource.data.reactionCounts is map &&
+              request.resource.data.reactionCounts.keys().hasOnly(['like', 'love', 'insightful', 'funny']));
+    }
+
+    function isValidPrivacySettings() {
+      return !('privacySettings' in request.resource.data) ||
+             (request.resource.data.privacySettings is map &&
+              request.resource.data.privacySettings.keys().hasOnly(['publicProfile', 'directMessages', 'activityStatus']));
+    }
+
+    function isValidRelationshipSettings() {
+      return request.resource.data.keys().hasAll([
+        'whoCanSendFriendRequest',
+        'whoCanSeeFriendList',
+        'whoCanMessageMe',
+        'whoCanInviteMeToCommunities',
+        'whoCanSeeFriendsOnlyPosts',
+        'allowFriendRequestMessage',
+        'showMutualFriends',
+        'updatedAt'
+      ]) &&
+      request.resource.data.whoCanSendFriendRequest in ['everyone', 'friends_of_friends', 'same_communities', 'nobody'] &&
+      request.resource.data.whoCanSeeFriendList in ['everyone', 'friends', 'only_me'] &&
+      request.resource.data.whoCanMessageMe in ['everyone', 'friends', 'friends_and_interest_contacts', 'nobody'] &&
+      request.resource.data.whoCanInviteMeToCommunities in ['everyone', 'friends', 'close_friends', 'nobody'] &&
+      request.resource.data.whoCanSeeFriendsOnlyPosts in ['friends', 'close_friends'] &&
+      request.resource.data.allowFriendRequestMessage is bool &&
+      request.resource.data.showMutualFriends is bool &&
+      request.resource.data.updatedAt is timestamp;
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser() {
+      return hasRequiredFields(['uid', 'email', 'displayName', 'createdAt']) &&
+             isValidString('uid', 1, 128) &&
+             isValidString('email', 5, 256) && isValidEmail(request.resource.data.email) &&
+             isValidString('displayName', 1, 100) &&
+             isValidOptionalString('photoURL', 0, 1000) &&
+             isValidOptionalString('coverURL', 0, 1000) &&
+             isValidOptionalString('bio', 0, 500) &&
+             isValidOptionalString('location', 0, 100) &&
+             isValidOptionalString('education', 0, 100) &&
+             isValidOptionalString('work', 0, 100) &&
+             isValidOptionalString('relationship', 0, 50) &&
+             isValidOptionalList('interests', 50) &&
+             isValidOptionalPositive('followersCount') &&
+             isValidOptionalPositive('followingCount') &&
+             isValidPrivacySettings() &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    function isValidPost() {
+      return hasRequiredFields(['authorId', 'authorName', 'content', 'visibility', 'createdAt']) &&
+             isValidString('authorId', 1, 128) &&
+             isValidString('authorName', 1, 100) &&
+             isValidOptionalString('authorPhoto', 0, 1000) &&
+             isValidString('content', 1, 5000) &&
+             isValidOptionalString('imageUrl', 0, 1000) &&
+             isValidOptionalString('imageDisplayUrl', 0, 1000) &&
+             isValidOptionalString('imageDeleteUrl', 0, 1000) &&
+             isValidOptionalPositive('imageWidth') &&
+             isValidOptionalPositive('imageHeight') &&
+             isValidOptionalString('imageMime', 0, 100) &&
+             isValidOptionalPositive('imageSize') &&
+             (!('hasImage' in request.resource.data) || request.resource.data.hasImage == null || request.resource.data.hasImage is bool) &&
+             isValidOptionalString('videoUrl', 0, 1000) &&
+             isValidOptionalList('hashtags', 30) &&
+             request.resource.data.visibility in ['public', 'friends', 'interests'] &&
+             isValidOptionalList('targetInterests', 30) &&
+             isValidOptionalPositive('likesCount') &&
+             isValidReactionCounts() &&
+             isValidOptionalPositive('commentsCount') &&
+             isValidOptionalPositive('sharesCount') &&
+             isValidOptionalString('communityId', 0, 128) &&
+             isValidOptionalString('communityName', 0, 100) &&
+             request.resource.data.createdAt is timestamp &&
+             (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt == null || request.resource.data.updatedAt is timestamp);
+    }
+
+    function isValidComment() {
+      return hasRequiredFields(['postId', 'authorId', 'authorName', 'content', 'createdAt']) &&
+             isValidString('postId', 1, 128) &&
+             isValidString('authorId', 1, 128) &&
+             isValidString('authorName', 1, 100) &&
+             isValidOptionalString('authorPhoto', 0, 1000) &&
+             isValidString('content', 1, 2000) &&
+             isValidOptionalString('replyToId', 0, 128) &&
+             isValidOptionalString('replyToName', 0, 100) &&
+             isValidOptionalPositive('likesCount') &&
+             isValidReactionCounts() &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    function isValidLike() {
+      return hasRequiredFields(['postId', 'userId', 'type', 'createdAt']) &&
+             isValidString('postId', 1, 128) &&
+             isValidOptionalString('commentId', 1, 128) &&
+             isValidString('userId', 1, 128) &&
+             request.resource.data.type in ['like', 'love', 'insightful', 'funny'] &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    function isValidFollow() {
+      return hasRequiredFields(['followerId', 'followingId', 'createdAt']) &&
+             isValidString('followerId', 1, 128) &&
+             isValidString('followingId', 1, 128) &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    function isValidNotification() {
+      return hasRequiredFields(['userId', 'actorId', 'type', 'read', 'createdAt']) &&
+             isValidString('userId', 1, 128) &&
+             isValidString('actorId', 1, 128) &&
+             isValidOptionalString('actorName', 0, 100) &&
+             isValidOptionalString('actorPhoto', 0, 1000) &&
+             request.resource.data.type in ['like', 'comment', 'follow', 'friend_request', 'friend_accept', 'share'] &&
+             isValidOptionalString('postId', 0, 128) &&
+             request.resource.data.read is bool &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    function isValidFriendRequest() {
+      return hasRequiredFields(['fromUid', 'toUid', 'status', 'createdAt']) &&
+             isValidString('fromUid', 1, 128) &&
+             isValidString('toUid', 1, 128) &&
+             request.resource.data.status in ['pending', 'accepted', 'declined', 'ignored', 'cancelled', 'blocked', 'expired'] &&
+             isValidOptionalString('message', 0, 240) &&
+             request.resource.data.createdAt is timestamp &&
+             (!('respondedAt' in request.resource.data) || request.resource.data.respondedAt == null || request.resource.data.respondedAt is timestamp);
+    }
+
+    function isValidFriendship() {
+      return hasRequiredFields(['pairId', 'users', 'status', 'updatedAt']) &&
+             isValidString('pairId', 1, 256) &&
+             request.resource.data.users is list &&
+             request.resource.data.users.size() == 2 &&
+             request.auth.uid in request.resource.data.users &&
+             request.resource.data.status in ['active', 'removed'] &&
+             (!('mutedBy' in request.resource.data) || request.resource.data.mutedBy is list) &&
+             request.resource.data.updatedAt is timestamp &&
+             (!('createdAt' in request.resource.data) || request.resource.data.createdAt == null || request.resource.data.createdAt is timestamp) &&
+             (!('removedAt' in request.resource.data) || request.resource.data.removedAt == null || request.resource.data.removedAt is timestamp);
+    }
+
+    function isValidBlock() {
+      return hasRequiredFields(['fromUid', 'toUid', 'createdAt']) &&
+             isValidString('fromUid', 1, 128) &&
+             isValidString('toUid', 1, 128) &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    function isValidRestriction() {
+      return hasRequiredFields(['fromUid', 'toUid', 'active', 'updatedAt', 'createdAt']) &&
+             isValidString('fromUid', 1, 128) &&
+             isValidString('toUid', 1, 128) &&
+             request.resource.data.active is bool &&
+             request.resource.data.updatedAt is timestamp &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    function isValidAffinityScore() {
+      return hasRequiredFields(['viewerUid', 'targetUid', 'score', 'updatedAt']) &&
+             isValidString('viewerUid', 1, 128) &&
+             isValidString('targetUid', 1, 128) &&
+             request.resource.data.score is number &&
+             request.resource.data.updatedAt is timestamp;
+    }
+
+    function isValidChat() {
+      return hasRequiredFields(['participants', 'createdAt', 'updatedAt']) &&
+             request.resource.data.participants is list &&
+             request.resource.data.participants.size() == 2 &&
+             request.auth.uid in request.resource.data.participants &&
+             isValidOptionalString('lastMessage', 0, 2000) &&
+             (!('lastMessageTime' in request.resource.data) || request.resource.data.lastMessageTime is timestamp) &&
+             (!('lastSenderId' in request.resource.data) || request.resource.data.lastSenderId is string) &&
+             (!('unreadCount' in request.resource.data) || request.resource.data.unreadCount is map) &&
+             request.resource.data.createdAt is timestamp &&
+             request.resource.data.updatedAt is timestamp;
+    }
+
+    function isValidMessage() {
+      return hasRequiredFields(['chatId', 'senderId', 'createdAt']) &&
+             isValidString('chatId', 1, 128) &&
+             isValidString('senderId', 1, 128) &&
+             request.resource.data.senderId == request.auth.uid &&
+             (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 4000)) &&
+             (!('image' in request.resource.data) || request.resource.data.image == null || request.resource.data.image is string) &&
+             (!('status' in request.resource.data) || request.resource.data.status in ['sending', 'sent', 'delivered', 'read']) &&
+             (!('reactions' in request.resource.data) || request.resource.data.reactions is map) &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    function isValidCommunity() {
+      return hasRequiredFields(['name', 'description', 'type', 'creatorId', 'members', 'memberCount', 'createdAt']) &&
+             isValidString('name', 1, 100) &&
+             isValidString('description', 1, 1000) &&
+             request.resource.data.type in ['Public', 'Private'] &&
+             isValidString('creatorId', 1, 128) &&
+             request.resource.data.members is list &&
+             isValidOptionalPositive('memberCount') &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    function isValidFeedback() {
+      return hasRequiredFields(['userId', 'userName', 'rating', 'category', 'content', 'createdAt']) &&
+             isValidString('userId', 1, 128) &&
+             isValidString('userName', 1, 100) &&
+             request.resource.data.rating is number && request.resource.data.rating >= 1 && request.resource.data.rating <= 5 &&
+             request.resource.data.category in ['Bug Report', 'Feature Request', 'Design', 'Performance', 'Other'] &&
+             isValidString('content', 1, 5000) &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    function isValidBookmark() {
+      return hasRequiredFields(['userId', 'postId', 'createdAt']) &&
+             isValidString('userId', 1, 128) &&
+             isValidString('postId', 1, 128) &&
+             request.resource.data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser() && uidUnchanged('uid');
+      allow update: if isOwner(userId) && isValidUser() && uidNotModified('uid') && uidNotModified('createdAt');
+    }
+
+    match /posts/{postId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidPost() && uidUnchanged('authorId');
+      allow update: if isAuthenticated() && isValidPost() && uidNotModified('authorId') && uidNotModified('createdAt');
+      allow delete: if isAuthenticated() && (
+        request.auth.uid == resource.data.authorId ||
+        (
+          resource.data.communityId != null && 
+          get(/databases/$(database)/documents/communities/$(resource.data.communityId)).data.creatorId == request.auth.uid
+        ) ||
+        (
+          resource.data.communityId != null && 
+          get(/databases/$(database)/documents/communities/$(resource.data.communityId)).data.roles[request.auth.uid] in ['admin', 'moderator', 'owner']
+        )
+      );
+    }
+
+    match /comments/{commentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidComment() && uidUnchanged('authorId');
+      allow update: if isAuthenticated() && isValidComment() && uidNotModified('authorId') && uidNotModified('createdAt');
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.authorId;
+    }
+
+    match /likes/{likeId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidLike() && uidUnchanged('userId');
+      allow update: if isAuthenticated() && isValidLike() && uidNotModified('userId');
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    match /followers/{followId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidFollow() && uidUnchanged('followerId');
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.followerId;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow create: if isAuthenticated() && isValidNotification();
+      allow update: if isAuthenticated() && request.auth.uid == resource.data.userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    match /chats/{chatId} {
+      allow read: if isAuthenticated() && request.auth.uid in resource.data.participants;
+      allow create: if isAuthenticated() && isValidChat();
+      allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
+    }
+
+    match /messages/{messageId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidMessage();
+      allow update: if isAuthenticated() && (request.auth.uid == resource.data.senderId || request.auth.uid in get(/databases/$(database)/documents/chats/$(resource.data.chatId)).data.participants);
+    }
+
+    match /calls/{callId} {
+       allow read, update, delete: if isAuthenticated() && (request.auth.uid == resource.data.callerId || request.auth.uid == resource.data.receiverId);
+       allow create: if isAuthenticated();
+    }
+
+    match /typing/{typingId} {
+       allow read, write: if isAuthenticated();
+    }
+
+    match /communities/{communityId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidCommunity() && request.resource.data.creatorId == request.auth.uid;
+      allow update: if isAuthenticated() && (
+        request.auth.uid == resource.data.creatorId || 
+        ('roles' in resource.data && request.auth.uid in resource.data.roles && resource.data.roles[request.auth.uid] in ['admin', 'owner']) ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberCount'])
+      );
+    }
+
+    match /communities/{communityId}/rules/{ruleId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && (
+        get(/databases/$(database)/documents/communities/$(communityId)).data.creatorId == request.auth.uid ||
+        get(/databases/$(database)/documents/communities/$(communityId)).data.roles[request.auth.uid] in ['admin', 'owner']
+      );
+    }
+
+    match /communities/{communityId}/rule_acceptances/{userId} {
+      allow read: if isAuthenticated() && (
+        request.auth.uid == userId || 
+        get(/databases/$(database)/documents/communities/$(communityId)).data.creatorId == request.auth.uid ||
+        get(/databases/$(database)/documents/communities/$(communityId)).data.roles[request.auth.uid] in ['admin', 'moderator', 'owner']
+      );
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    match /feedback/{feedbackId} {
+      allow read: if false; // Only admins via console
+      allow create: if isAuthenticated() && isValidFeedback() && request.resource.data.userId == request.auth.uid;
+    }
+
+    match /interactions/{interactionId} {
+      allow read: if false; // Only backend/admin
+      allow create: if isAuthenticated() && request.resource.data.fromUid == request.auth.uid;
+    }
+
+    match /bookmarks/{bookmarkId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && isValidBookmark() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+
+    match /friend_requests/{requestId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidFriendRequest();
+      allow update: if isAuthenticated() && isValidFriendRequest();
+      allow delete: if isAuthenticated();
+    }
+
+    match /friendships/{friendshipId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidFriendship();
+      allow update: if isAuthenticated() && isValidFriendship();
+      allow delete: if false;
+    }
+
+    match /blocks/{blockId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidBlock();
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.fromUid;
+    }
+
+    match /restrictions/{restrictionId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidRestriction();
+      allow update: if isAuthenticated() && isValidRestriction();
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.fromUid;
+    }
+
+    match /relationship_settings/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == userId && isValidRelationshipSettings();
+      allow update: if isAuthenticated() && request.auth.uid == userId && isValidRelationshipSettings();
+    }
+
+    match /affinity_scores/{scoreId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.viewerUid || request.auth.uid == resource.data.targetUid);
+      allow create: if isAuthenticated() && isValidAffinityScore() && request.resource.data.viewerUid == request.auth.uid;
+      allow update: if isAuthenticated() && isValidAffinityScore() && request.auth.uid == resource.data.viewerUid;
+    }
+  }
+}
