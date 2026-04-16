@@ -1,8 +1,9 @@
-import type { NotAdaptableConfig } from "@opennextjs/cloudflare";
-
-const config: NotAdaptableConfig = {
+const config = {
   default: {
-    runtime: "edge",
+    override: {
+      wrapper: "cloudflare-node",
+      converter: "edge",
+    },
   },
 };
 
