@@ -1,4 +1,5 @@
-// OpenNext configuration for Cloudflare Workers
-// See: https://opennext.js.org/cloudflare
-const config = {};
+const config = {
+  default: {},
+};
+
 export default config;
