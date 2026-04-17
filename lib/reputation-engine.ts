@@ -1,70 +1,16 @@
 // ─── REPUTATION ENGINE ─────────────────────────────────────────────
-// Server-side reputation processing. Uses firebase-admin when available.
-// On Cloudflare Workers, firebase-admin may not initialize correctly,
-// so we wrap everything in try-catch to fail gracefully.
-
-let adminDb: any = null;
-
-async function getAdminDb() {
-  if (adminDb) return adminDb;
-  try {
-    const { initializeApp, getApps, getApp } = await import('firebase-admin/app');
-    const { getFirestore } = await import('firebase-admin/firestore');
-    
-    let app;
-    if (!getApps().length) {
-      app = initializeApp();
-    } else {
-      app = getApp();
-    }
-    adminDb = getFirestore(app);
-    return adminDb;
-  } catch (e) {
-    console.warn('[ReputationEngine] firebase-admin not available in this environment:', e);
-    return null;
-  }
-}
+// Server-side reputation processing.
+// DISABLED firebase-admin for Cloudflare Workers compatibility.
+// Reputation updates are handled via client-side Firestore listeners
+// or direct client-side increments when needed.
 
 export async function processInteraction(
-  type: string,
-  fromUid: string,
-  toUid: string,
-  postId: string
+  _type: string,
+  _fromUid: string,
+  _toUid: string,
+  _postId: string
 ) {
-  try {
-    const db = await getAdminDb();
-    if (!db) {
-      console.log('[ReputationEngine] Skipping interaction processing — admin SDK unavailable');
-      return;
-    }
-
-    const weights: Record<string, number> = {
-      view: 0.1,
-      save: 5,
-      share: 3,
-      comment: 2,
-      report: -10,
-    };
-
-    const weight = weights[type] || 0;
-    if (weight === 0) return;
-
-    const { FieldValue } = await import('firebase-admin/firestore');
-
-    const postRef = db.collection('posts').doc(postId);
-    await postRef.update({
-      score: FieldValue.increment(weight),
-    });
-
-    const userRepRef = db.collection('users').doc(toUid).collection('reputation').doc('global');
-    await userRepRef.set(
-      {
-        score: FieldValue.increment(weight * 0.5),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
-  } catch (e) {
-    console.error('[ReputationEngine] Error processing interaction:', e);
-  }
+  // Server-side processing is disabled to prevent Worker crashes.
+  // The interaction is already logged to Firestore in the API route.
+  console.log('[ReputationEngine] Server-side processing disabled in this environment');
 }

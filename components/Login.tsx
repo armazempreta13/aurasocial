@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { auth } from '@/firebase';
-import { signInWithRedirect, getRedirectResult, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { useTranslation } from 'react-i18next';
 
 export function Login() {
@@ -45,10 +45,18 @@ export function Login() {
   const handleGoogleLogin = async () => {
     try {
       setLoading(true);
+      setError('');
       const provider = new GoogleAuthProvider();
-      await signInWithRedirect(auth, provider);
+      // Using signInWithPopup because it's often more reliable in web views and doesn't require session handling for redirect results.
+      await signInWithPopup(auth, provider);
     } catch (err: any) {
-      setError(err.message);
+      console.error('Login Error:', err);
+      if (err.code === 'auth/unauthorized-domain') {
+        setError(t('login.domain_error', 'Este domínio não está autorizado no console do Firebase. Adicione "aurasocial.philippeboechat1.workers.dev" aos domínios autorizados.'));
+      } else {
+        setError(err.message);
+      }
+    } finally {
       setLoading(false);
     }
   };
