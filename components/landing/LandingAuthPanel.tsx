@@ -7,6 +7,7 @@ import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
   updateProfile,
@@ -35,6 +36,8 @@ function getAuthErrorMessage(error: any) {
       return 'O login com Google foi fechado antes de terminar.';
     case 'auth/too-many-requests':
       return 'Muitas tentativas. Tente novamente em alguns minutos.';
+    case 'auth/unauthorized-domain':
+      return 'Este domínio não está autorizado no Firebase. Adicione "aurasocial.philippeboechat1.workers.dev" aos domínios autorizados no Console do Firebase.';
     default:
       return 'Não foi possível autenticar agora.';
   }
@@ -157,11 +160,12 @@ export function LandingAuthPanel({
     setIsSubmitting(true);
 
     try {
-      console.log('Iniciando redirecionamento do Google...');
+      console.log('Iniciando login com Google Popup...');
       const provider = new GoogleAuthProvider();
-      await signInWithRedirect(auth, provider);
+      await signInWithPopup(auth, provider);
+      console.log('Login com Google realizado!');
     } catch (err: any) {
-      console.error('Erro ao iniciar redirecionamento Google:', err);
+      console.error('Erro no login Google Popup:', err);
       setError(getAuthErrorMessage(err));
     } finally {
       setIsSubmitting(false);
