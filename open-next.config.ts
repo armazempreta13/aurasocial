@@ -1,10 +1,4 @@
-const config = {
-  default: {
-    override: {
-      wrapper: "cloudflare-node",
-      converter: "edge",
-    },
-  },
-};
-
+// OpenNext configuration for Cloudflare Workers
+// See: https://opennext.js.org/cloudflare
+const config = {};
 export default config;

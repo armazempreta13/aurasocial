@@ -1,20 +1,28 @@
-import { initializeApp, cert, getApps, getApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+// ─── REPUTATION ENGINE ─────────────────────────────────────────────
+// Server-side reputation processing. Uses firebase-admin when available.
+// On Cloudflare Workers, firebase-admin may not initialize correctly,
+// so we wrap everything in try-catch to fail gracefully.
 
-// Lazy initialization
-let adminApp: any;
+let adminDb: any = null;
 
-function getAdminDb() {
-  if (!adminApp) {
+async function getAdminDb() {
+  if (adminDb) return adminDb;
+  try {
+    const { initializeApp, getApps, getApp } = await import('firebase-admin/app');
+    const { getFirestore } = await import('firebase-admin/firestore');
+    
+    let app;
     if (!getApps().length) {
-      // In a real production environment, you would use serviceAccount credentials
-      // For this environment, we assume the environment is already configured
-      adminApp = initializeApp();
+      app = initializeApp();
     } else {
-      adminApp = getApp();
+      app = getApp();
     }
+    adminDb = getFirestore(app);
+    return adminDb;
+  } catch (e) {
+    console.warn('[ReputationEngine] firebase-admin not available in this environment:', e);
+    return null;
   }
-  return getFirestore(adminApp);
 }
 
 export async function processInteraction(
@@ -23,30 +31,40 @@ export async function processInteraction(
   toUid: string,
   postId: string
 ) {
-  const db = getAdminDb();
-  
-  // 1. Define weights
-  const weights: Record<string, number> = {
-    view: 0.1,
-    save: 5,
-    share: 3,
-    comment: 2,
-    report: -10
-  };
+  try {
+    const db = await getAdminDb();
+    if (!db) {
+      console.log('[ReputationEngine] Skipping interaction processing — admin SDK unavailable');
+      return;
+    }
 
-  const weight = weights[type] || 0;
-  if (weight === 0) return;
+    const weights: Record<string, number> = {
+      view: 0.1,
+      save: 5,
+      share: 3,
+      comment: 2,
+      report: -10,
+    };
 
-  // 2. Update Post Score (Atomic increment)
-  const postRef = db.collection('posts').doc(postId);
-  await postRef.update({
-    score: require('firebase-admin/firestore').FieldValue.increment(weight)
-  });
+    const weight = weights[type] || 0;
+    if (weight === 0) return;
 
-  // 3. Update User Reputation (Simplified logic)
-  const userRepRef = db.collection('users').doc(toUid).collection('reputation').doc('global');
-  await userRepRef.set({
-    score: require('firebase-admin/firestore').FieldValue.increment(weight * 0.5),
-    updatedAt: require('firebase-admin/firestore').FieldValue.serverTimestamp()
-  }, { merge: true });
+    const { FieldValue } = await import('firebase-admin/firestore');
+
+    const postRef = db.collection('posts').doc(postId);
+    await postRef.update({
+      score: FieldValue.increment(weight),
+    });
+
+    const userRepRef = db.collection('users').doc(toUid).collection('reputation').doc('global');
+    await userRepRef.set(
+      {
+        score: FieldValue.increment(weight * 0.5),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch (e) {
+    console.error('[ReputationEngine] Error processing interaction:', e);
+  }
 }

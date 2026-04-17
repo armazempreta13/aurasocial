@@ -1,6 +1,9 @@
-import { Server as NetServer } from 'http';
-import { NextApiRequest } from 'next';
-import { Server as SocketIOServer } from 'socket.io';
+// Socket.io server stub for Cloudflare Workers compatibility.
+// Cloudflare Workers don't support persistent HTTP servers or WebSocket upgrades
+// via socket.io. The real-time messaging in production uses Firebase Firestore
+// listeners + SSE signaling instead.
+
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 export const config = {
   api: {
@@ -8,38 +11,11 @@ export const config = {
   },
 };
 
-const ioHandler = (req: NextApiRequest, res: any) => {
-  if (!res.socket.server.io) {
-    console.log('[SOCKET] Initializing Socket.io server...');
-    const httpServer: NetServer = res.socket.server as any;
-    const io = new SocketIOServer(httpServer, {
-      path: '/api/socket',
-      addTrailingSlash: false,
-    });
-    
-    io.on('connection', (socket) => {
-      socket.on('join', (userId) => {
-        socket.join(userId);
-      });
-
-      socket.on('send-message', (data) => {
-        io.to(data.toId).emit('new-message', data);
-      });
-
-      socket.on('signal', (data) => {
-        io.to(data.toId).emit('signal', data);
-      });
-      
-      socket.on('typing-status', (data) => {
-         io.to(data.toId).emit('typing-status', data);
-      });
-    });
-
-    res.socket.server.io = io;
-  }
-  
-  // Important: Always end the request so it's not a timeout
-  res.end();
+const ioHandler = (_req: NextApiRequest, res: NextApiResponse) => {
+  // In production (Cloudflare Workers), socket.io is not available.
+  // Real-time features use Firebase Firestore onSnapshot listeners
+  // and the /api/signaling/listen SSE endpoint instead.
+  res.status(200).json({ status: 'ok', message: 'Socket endpoint placeholder' });
 };
 
 export default ioHandler;
