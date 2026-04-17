@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppStore } from '@/lib/store';
 import { LandingPage } from '@/components/LandingPage';
@@ -29,7 +29,11 @@ export default function Home() {
   }
 
   if (!user) {
-    return <LandingPage />;
+    return (
+      <React.Suspense fallback={<AuthTransitionScreen />}>
+        <LandingPage />
+      </React.Suspense>
+    );
   }
 
   return <AuthTransitionScreen />;

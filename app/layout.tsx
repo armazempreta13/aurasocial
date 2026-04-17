@@ -1,15 +1,13 @@
 import type {Metadata} from 'next';
-import { Inter } from 'next/font/google';
 import { AuthProvider } from '@/components/AuthProvider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { QueryProvider } from '@/components/QueryProvider';
 import { SignalingProvider } from '@/components/SignalingProvider';
 import './globals.css';
 
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-});
+
+// Using system fonts for Worker compatibility
+const inter = { variable: 'font-inter' };
 
 export const metadata: Metadata = {
   title: 'Aura | The Intelligent Social Network',
