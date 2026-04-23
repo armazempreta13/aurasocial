@@ -199,7 +199,7 @@ export function Feed({
                               post.hasEvent || post.poll || post.event || post.mediaUrls?.length;
         if (!hasAnyContent) return false;
         if (blockedUserIds.has(post.authorId)) return false;
-        if (post.visibility === 'friends' && post.authorId !== profile?.uid && !friendIds.has(post.authorId)) return false;
+        if (post.visibility === 'friends' && post.authorId !== profile?.uid && !friendIds.has(post.authorId) && !post.communityId) return false;
         if (type === 'media' && !(post.imageUrl || post.videoUrl || post.hasImage || post.hasVideo)) return false;
         return true;
       });
