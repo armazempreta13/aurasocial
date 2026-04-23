@@ -582,9 +582,9 @@ export default function CommunityDetailPage() {
           Voltar para comunidades
         </button>
 
-        <div className="group/comm mb-8 rounded-[40px] border border-border/40 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.05)] relative">
-          <div className="relative h-[220px] z-40">
-            <div className="absolute inset-0 overflow-hidden rounded-t-[40px] z-0" style={coverStyle}>
+        <div className="group/comm mb-4 md:mb-8 rounded-[24px] md:rounded-[40px] border border-border/40 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.05)] relative">
+          <div className="relative h-[180px] md:h-[220px] z-40">
+            <div className="absolute inset-0 overflow-hidden rounded-t-[24px] md:rounded-t-[40px] z-0" style={coverStyle}>
               {community.coverURL ? (
                 <Image
                   src={community.coverURL}
@@ -599,11 +599,11 @@ export default function CommunityDetailPage() {
               <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
             </div>
 
-            <div className="absolute bottom-8 left-8 right-8 z-50">
-              <div className="flex items-start gap-4">
+            <div className="absolute bottom-4 left-4 right-4 md:bottom-8 md:left-8 md:right-8 z-50">
+              <div className="flex flex-col md:flex-row items-start md:items-end gap-3 md:gap-4">
                 <div className="relative shrink-0">
                   <div 
-                    className="flex h-24 w-24 items-center justify-center rounded-[32px] border-4 border-white text-3xl font-black text-white shadow-xl overflow-hidden"
+                    className="flex h-20 w-20 md:h-24 md:w-24 items-center justify-center rounded-[24px] md:rounded-[32px] border-4 border-white text-2xl md:text-3xl font-black text-white shadow-xl overflow-hidden"
                     style={{ backgroundColor: themeColor }}
                   >
                     {community.image ? (
@@ -620,9 +620,9 @@ export default function CommunityDetailPage() {
                   </div>
                 </div>
 
-                <div className="mt-2 min-w-0 flex-1">
+                <div className="mt-1 md:mt-2 min-w-0 flex-1 w-full">
                   <div className="flex items-center gap-2">
-                    <h1 className="truncate text-3xl font-black tracking-tight text-white drop-shadow-sm">
+                    <h1 className="truncate text-2xl md:text-3xl font-black tracking-tight text-white drop-shadow-sm">
                       {community.name}
                     </h1>
                     {community.type === 'Private' && (
@@ -643,27 +643,28 @@ export default function CommunityDetailPage() {
                   </div>
                 </div>
 
-                <div className="mt-2 flex shrink-0 gap-3">
+                <div className="mt-2 flex w-full md:w-auto shrink-0 gap-2 md:gap-3 overflow-x-auto no-scrollbar pb-1 md:pb-0">
                   <button
                     onClick={handleInvite}
-                    className="flex h-11 items-center gap-2 rounded-2xl border border-white/30 bg-white/10 px-5 text-[13px] font-black text-white backdrop-blur-md transition-all hover:bg-white/20 active:scale-95"
+                    className="flex h-10 md:h-11 items-center gap-1 md:gap-2 rounded-xl md:rounded-2xl border border-white/30 bg-white/10 px-3 md:px-5 text-[12px] md:text-[13px] font-black text-white backdrop-blur-md transition-all hover:bg-white/20 active:scale-95 whitespace-nowrap"
                   >
                     <Plus className="h-4 w-4" />
-                    Convidar
+                    <span className="hidden md:inline">Convidar</span>
+                    <span className="md:hidden">Add</span>
                   </button>
                   <button
                     onClick={handleShareCommunity}
-                    className="flex h-11 items-center gap-2 rounded-2xl border border-white/30 bg-white/10 px-5 text-[13px] font-black text-white backdrop-blur-md transition-all hover:bg-white/20 active:scale-95"
+                    className="flex h-10 md:h-11 items-center gap-1 md:gap-2 rounded-xl md:rounded-2xl border border-white/30 bg-white/10 px-3 md:px-5 text-[12px] md:text-[13px] font-black text-white backdrop-blur-md transition-all hover:bg-white/20 active:scale-95 whitespace-nowrap"
                   >
                     <Link2 className="h-4 w-4" />
-                    Compartilhar
+                    <span className="hidden md:inline">Compartilhar</span>
                   </button>
 
-                  <div className="relative group/actions">
+                  <div className="relative group/actions w-full md:w-auto">
                     <button
                       onClick={() => setShowMemberMenu(!showMemberMenu)}
                       disabled={!isMember && joinRequestPending && community?.security?.requireApproval}
-                      className="flex h-11 items-center gap-2 rounded-2xl px-6 font-black text-white shadow-lg transition-all hover:opacity-95 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex w-full md:w-auto justify-center h-10 md:h-11 items-center gap-2 rounded-xl md:rounded-2xl px-4 md:px-6 font-black text-white shadow-lg transition-all hover:opacity-95 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                       style={
                         !isMember && !(joinRequestPending && community?.security?.requireApproval)
                           ? {
@@ -722,9 +723,9 @@ export default function CommunityDetailPage() {
             </div>
           </div>
 
-          <div className="sticky top-[64px] z-30 border-t border-border/40 bg-white/80 px-8 py-3 backdrop-blur-md">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+          <div className="sticky top-[56px] md:top-[64px] z-30 border-t border-border/40 bg-white/80 px-4 md:px-8 py-3 backdrop-blur-md">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-4">
+              <div className="flex w-full md:w-auto items-center gap-1 overflow-x-auto no-scrollbar pb-1 md:pb-0">
                 {[
                   { id: 'discussion', label: 'Discussão', onClick: () => setActiveTab('discussion') },
                   { id: 'highlights', label: 'Em destaque', onClick: () => setActiveTab('highlights') },
@@ -1032,7 +1033,7 @@ export default function CommunityDetailPage() {
                       <div className="mb-6 rounded-[28px] border border-border/50 bg-white p-6 shadow-sm">
                         <p className="text-sm font-black uppercase tracking-widest text-muted-foreground">Em destaque</p>
                         <Link href={`/post/${weeklyHighlight.postId}`} className="mt-2 block text-[16px] font-extrabold text-foreground hover:text-primary">
-                          {renderTextWithLinks(weeklyHighlight.postTitle)}
+                          {renderTextWithLinks(weeklyHighlight.postTitle || '')}
                         </Link>
                         {weeklyHighlight.memberName ? (
                           <p className="mt-2 text-sm font-semibold text-muted-foreground">
