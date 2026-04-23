@@ -10,7 +10,7 @@ View your app in AI Studio: https://ai.studio/apps/bb36e766-0e20-40da-9b8e-20447
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
+**Prerequisites:** Node.js (recommended: Node 24)
 
 
 1. Install dependencies:
@@ -18,3 +18,14 @@ View your app in AI Studio: https://ai.studio/apps/bb36e766-0e20-40da-9b8e-20447
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Deploy (Cloudflare Workers)
+
+This project is set up to deploy Next.js to Cloudflare Workers using OpenNext.
+
+1. Configure your environment variables in Cloudflare (Worker settings) and/or via Wrangler secrets.
+2. Build and deploy:
+   `npm run deploy`
+
+If you deploy via Cloudflare's Git integration, make sure the repo includes a Wrangler config that Cloudflare can detect.
+This repo provides `wrangler.toml` and `wrangler.jsonc` with the required `assets` binding (`ASSETS`) for `/_next/static/*`.

@@ -18,8 +18,13 @@ const resources = {
   }
 };
 
+const isBrowser = typeof window !== 'undefined';
+
+if (isBrowser) {
+  i18n.use(LanguageDetector);
+}
+
 i18n
-  .use(LanguageDetector)
   .use(initReactI18next)
   .init({
     resources,
@@ -30,14 +35,14 @@ i18n
     nonExplicitSupportedLngs: true,
     
     interpolation: {
-      escapeValue: false, // React already protects from XSS here
+      escapeValue: false,
     },
     
-    detection: {
+    detection: isBrowser ? {
       order: ['localStorage', 'navigator'],
       lookupLocalStorage: 'i18nextLng',
       caches: ['localStorage'],
-    }
+    } : undefined
   });
 
 export default i18n;

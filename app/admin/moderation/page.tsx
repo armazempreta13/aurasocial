@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { getRemoteModerationConfig, updateModerationConfig } from '@/lib/moderation/utils';
 import { ModerationConfig } from '@/lib/moderation/engine';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { db } from '@/firebase';
 import { getCountFromServer, query, collection, where } from 'firebase/firestore';
 import { useAppStore } from '@/lib/store';
