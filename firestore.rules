@@ -150,12 +150,12 @@ service cloud.firestore {
     }
 
     function isValidPost() {
-      return hasRequiredFields(['authorId', 'authorName', 'content', 'visibility', 'createdAt']) &&
+      return hasRequiredFields(['authorId', 'authorName', 'visibility', 'createdAt']) &&
              isValidString('authorId', 1, 128) &&
              isValidString('authorName', 1, 100) &&
              isValidOptionalString('authorPhoto', 0, 1000) &&
              isValidOptionalString('authorUsername', 0, 100) &&
-             isValidString('content', 1, 5000) &&
+             isValidOptionalString('content', 0, 5000) &&
              isValidOptionalString('imageUrl', 0, 1000) &&
              isValidOptionalString('imageDisplayUrl', 0, 1000) &&
              isValidOptionalString('imageDeleteUrl', 0, 1000) &&
@@ -179,6 +179,7 @@ service cloud.firestore {
              isValidOptionalPositive('sharesCount') &&
              isValidOptionalPositive('viewsCount') &&
              isValidOptionalPositive('savesCount') &&
+             isValidOptionalPositive('score') &&
              isValidOptionalString('communityId', 0, 128) &&
              isValidOptionalString('communityName', 0, 100) &&
              isValidOptionalString('mood', 0, 50) &&
