@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { AppLayout } from '@/components/AppLayout';
-import { collection, query, onSnapshot, where, doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, onSnapshot, where, doc, setDoc, getDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/firebase';
 import { useAppStore } from '@/lib/store';
 import { Users, UserPlus, UserCheck, Search, UserRoundCheck, UserRoundX, ShieldBan, Repeat2 } from 'lucide-react';
