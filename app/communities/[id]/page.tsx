@@ -203,16 +203,25 @@ export default function CommunityDetailPage() {
 
   useEffect(() => {
     if (!id) return;
-    const aDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     
+    // Query only by communityId to avoid needing a composite index.
+    // Date filtering is done client-side to prevent index errors during build phase.
     const activityQuery = query(
       collection(db, 'posts'),
       where('communityId', '==', id),
-      where('createdAt', '>=', aDayAgo)
+      orderBy('createdAt', 'desc'),
+      limit(50)
     );
 
     const unsubscribe = onSnapshot(activityQuery, (snapshot) => {
-      setRecentActivityCount(snapshot.size);
+      const aDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+      const recentCount = snapshot.docs.filter(docSnap => {
+        const data = docSnap.data();
+        const ts = data.createdAt?.toMillis ? data.createdAt.toMillis() :
+                   data.createdAt?.seconds ? data.createdAt.seconds * 1000 : 0;
+        return ts >= aDayAgo;
+      }).length;
+      setRecentActivityCount(recentCount);
     }, (error) => {
       console.warn('Activity sync failed:', error);
     });
