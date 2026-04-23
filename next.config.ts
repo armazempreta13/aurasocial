@@ -29,12 +29,13 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        // Apply security headers to all routes EXCEPT static assets
-        source: '/((?!_next/static|favicon.ico).*)',
+        // Apply security headers to all routes. 
+        // Cross-Origin-Opener-Policy is set to unsafe-none to allow Firebase Auth popups.
+        source: '/:path*',
         headers: [
           {
             key: 'Cross-Origin-Opener-Policy',
-            value: 'same-origin-allow-popups',
+            value: 'unsafe-none',
           },
           {
             key: 'Cross-Origin-Embedder-Policy',
@@ -59,7 +60,7 @@ const nextConfig: NextConfig = {
   transpilePackages: ['motion'],
   webpack: (config, {dev}) => {
     // HMR is disabled in AI Studio via DISABLE_HMR env var.
-    // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+    // Do not modify—file watching is disabled to prevent flickering during agent edits.
     if (dev && process.env.DISABLE_HMR === 'true') {
       config.watchOptions = {
         ignored: /.*/,

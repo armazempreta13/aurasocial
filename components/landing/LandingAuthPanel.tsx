@@ -44,6 +44,11 @@ function getAuthErrorMessage(
         'login.unauthorized_domain',
         'Este domínio ainda não está autorizado no Firebase. Adicione o domínio atual aos domínios autorizados no console do Firebase.'
       );
+    case 'auth/operation-not-allowed':
+      return t(
+        'login.not_allowed',
+        'Este método de login não está ativado no Firebase Console. Ative E-mail/Senha e Google.'
+      );
     default:
       return t('login.generic_error', 'Não foi possível autenticar agora.');
   }

@@ -34,6 +34,8 @@ export function Login() {
         setError(t('login.invalid', 'E-mail ou senha inválidos.'));
       } else if (err.code === 'auth/weak-password') {
         setError(t('login.weak', 'A senha deve ter pelo menos 6 caracteres.'));
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError(t('login.not_allowed', 'Este método de login não está ativado no Console do Firebase. Ative E-mail/Senha e Google.'));
       } else {
         setError(err.message);
       }
@@ -52,7 +54,9 @@ export function Login() {
     } catch (err: any) {
       console.error('Login Error:', err);
       if (err.code === 'auth/unauthorized-domain') {
-        setError(t('login.domain_error', 'Este domínio não está autorizado no console do Firebase. Adicione "aurasocial.philippeboechat1.workers.dev" aos domínios autorizados.'));
+        setError(t('login.domain_error', 'Este domínio não está autorizado no console do Firebase. Adicione o domínio atual aos domínios autorizados no Console do Firebase (Authentication > Settings).'));
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError(t('login.not_allowed', 'O login com Google não está ativado. Ative-o no Console do Firebase.'));
       } else {
         setError(err.message);
       }
