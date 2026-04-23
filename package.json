@@ -8,6 +8,7 @@
     "build:cloudflare": "next build && opennextjs-cloudflare build --skipBuild --noMinify",
     "build:worker": "opennextjs-cloudflare build --noMinify",
     "deploy": "npm run build:cloudflare && opennextjs-cloudflare deploy",
+    "postbuild": "opennextjs-cloudflare build --skipBuild --noMinify",
     "preview": "opennextjs-cloudflare preview",
     "clean": "node -e \"require('fs').rmSync('.next',{ recursive: true, force: true }); require('fs').rmSync('.open-next',{ recursive: true, force: true })\""
   },
