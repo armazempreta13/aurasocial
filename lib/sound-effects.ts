@@ -8,7 +8,7 @@
 const SOUND_URLS = {
   pop: 'https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3',       // Chat message / Subtle alert
   reaction: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',  // Gentle click for reactions
-  success: 'https://assets.mixkit.co/active_storage/sfx/2040/2040-preview.mp3',   // Swoosh for sending posts
+  success: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',   // Gentle click for sending posts
   notification: 'https://assets.mixkit.co/active_storage/sfx/2210/2210-preview.mp3', // Chime for new notifications
   delete: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3',   // Subtle crunch/trash
 };
@@ -22,7 +22,7 @@ class SoundEffects {
     try {
       if (!this.cache[soundKey]) {
         this.cache[soundKey] = new Audio(SOUND_URLS[soundKey]);
-        this.cache[soundKey].volume = 0.4; // Keep it subtle and premium
+        this.cache[soundKey].volume = soundKey === 'success' ? 0.15 : 0.25; // Keep it extremely subtle and premium
       }
 
       const audio = this.cache[soundKey];

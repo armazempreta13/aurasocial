@@ -16,6 +16,7 @@ import { MentionSuggestions } from './MentionSuggestions';
 import { HashtagSuggestions } from './HashtagSuggestions';
 import { soundEffects } from '@/lib/sound-effects';
 import { validateContent } from '@/lib/moderation/utils';
+import { ActionModal } from './ActionModal';
 
 export function CreatePost({ communityId, communityName }: { communityId?: string, communityName?: string }) {
   const { t } = useTranslation('common');
@@ -41,6 +42,8 @@ export function CreatePost({ communityId, communityName }: { communityId?: strin
   const [pollExpiration, setPollExpiration] = useState(24); // hours
   const [mood, setMood] = useState<string | null>(null);
   const [showMoodPicker, setShowMoodPicker] = useState(false);
+  const [showHashtagNudge, setShowHashtagNudge] = useState(false);
+  const [isBypassingNudge, setIsBypassingNudge] = useState(false);
   const hashtags = useMemo(() => extractHashtags(content), [content]);
 
   // Show live preview when the text contains markdown markers
@@ -320,24 +323,21 @@ export function CreatePost({ communityId, communityName }: { communityId?: strin
     }
 
     // Gentle nudge: hashtags fuel "Assuntos do Momento" and discovery (no UI/layout changes)
-    if (typeof window !== 'undefined' && hashtags.length === 0 && content.trim()) {
+    if (typeof window !== 'undefined' && hashtags.length === 0 && content.trim() && !isBypassingNudge) {
       try {
         const storageKey = 'aura_hashtag_nudge_v1';
         const alreadyNudged = window.localStorage.getItem(storageKey) === '1';
         if (!alreadyNudged) {
-          const proceed = window.confirm(
-            'Dica: adicione 1–3 #hashtags para seu post entrar em "Assuntos do Momento".\n\nQuer publicar mesmo assim?'
-          );
-          window.localStorage.setItem(storageKey, '1');
-          if (!proceed) {
-            setIsSubmitting(false);
-            return;
-          }
+          setShowHashtagNudge(true);
+          setIsSubmitting(false);
+          return;
         }
       } catch {
         // ignore storage failures
       }
     }
+
+    setIsBypassingNudge(false); // Reset bypass for next post
 
     // OPTIMISTIC UX LAYER (Instant appearance)
     // Use a real Firestore document id so interactions (likes/comments) never target a non-existent doc.
@@ -817,6 +817,23 @@ export function CreatePost({ communityId, communityName }: { communityId?: strin
           </div>
         </div>
       )}
+
+      <ActionModal
+        isOpen={showHashtagNudge}
+        onClose={() => setShowHashtagNudge(false)}
+        onConfirm={() => {
+          try {
+            window.localStorage.setItem('aura_hashtag_nudge_v1', '1');
+          } catch {}
+          setIsBypassingNudge(true);
+          setTimeout(() => handleSubmit(), 0);
+        }}
+        title="Dica de Engajamento"
+        message="Sabia que adicionar 1–3 #hashtags ajuda seu post a entrar em 'Assuntos do Momento' e ser descoberto por mais pessoas?"
+        confirmLabel="Publicar mesmo assim"
+        cancelLabel="Vou adicionar hashtags"
+        variant="info"
+      />
     </div>
   );
 }
