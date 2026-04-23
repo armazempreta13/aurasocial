@@ -12,6 +12,7 @@ export default function CommunityAdminSecurityPage() {
   const [data, setData] = useState({
     requireApproval: false,
     restrictPosting: false,
+    postRequiresApproval: false,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -24,6 +25,7 @@ export default function CommunityAdminSecurityPage() {
         setData({
           requireApproval: d.security?.requireApproval || false,
           restrictPosting: d.security?.restrictPosting || false,
+          postRequiresApproval: d.security?.postRequiresApproval || false,
         });
       }
       setLoading(false);
@@ -97,6 +99,23 @@ export default function CommunityAdminSecurityPage() {
               </div>
               <div className="text-sm text-muted-foreground mt-1 leading-relaxed">
                 If checked, only members with a "Trusted" badge or higher can create new posts. Normal users can only comment. (Badge system coming soon).
+              </div>
+            </div>
+          </label>
+
+          <label className={`flex items-start gap-4 p-5 border rounded-2xl cursor-pointer transition-all ${data.postRequiresApproval ? 'border-primary/50 bg-primary/5' : 'border-border/50 hover:bg-muted/30'}`}>
+            <input
+              type="checkbox"
+              checked={data.postRequiresApproval}
+              onChange={e => setData({ ...data, postRequiresApproval: e.target.checked })}
+              className="mt-1 w-5 h-5 text-primary rounded"
+            />
+            <div>
+              <div className="font-bold text-foreground text-lg flex items-center gap-2">
+                <Lock className="w-5 h-5 text-primary" /> Aprovar posts antes de publicar
+              </div>
+              <div className="text-sm text-muted-foreground mt-1 leading-relaxed">
+                Quando ativado, posts de membros comuns ficam como "pendentes" atÃ© um Admin/Mod aprovar.
               </div>
             </div>
           </label>

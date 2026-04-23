@@ -3,7 +3,23 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { db } from '@/firebase';
-import { doc, getDoc, updateDoc, arrayRemove, collection, getDocs } from 'firebase/firestore';
+import {
+  addDoc,
+  arrayRemove,
+  arrayUnion,
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  increment,
+  limit,
+  orderBy,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+  writeBatch,
+} from 'firebase/firestore';
 import { Loader2, UserMinus, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 
@@ -13,6 +29,7 @@ export default function CommunityAdminMembersPage() {
   const { profile } = useAppStore();
   const [community, setCommunity] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
@@ -31,11 +48,33 @@ export default function CommunityAdminMembersPage() {
       }
 
       try {
-        const usersSnap = await getDocs(collection(db, 'users'));
-        const matchedUsers = usersSnap.docs
-          .map(d => ({ id: d.id, ...d.data() }))
-          .filter(u => memberIds.includes(u.id));
+        const [usersSnap, requestsSnap] = await Promise.all([
+          getDocs(collection(db, 'users')),
+          getDocs(
+            query(
+              collection(db, 'community_requests'),
+              where('communityId', '==', id),
+              where('status', '==', 'pending'),
+              orderBy('createdAt', 'desc'),
+              limit(50)
+            )
+          ),
+        ]);
+
+        const allUsers = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const matchedUsers = allUsers.filter(u => memberIds.includes(u.id));
         setMembers(matchedUsers);
+
+        const reqs = requestsSnap.docs.map(r => ({ id: r.id, ...(r.data() as any) }));
+        const reqUsers = reqs
+          .map((r: any) => allUsers.find(u => u.id === r.userId))
+          .filter(Boolean);
+
+        const resolved = reqs.map((r: any) => ({
+          ...r,
+          user: allUsers.find(u => u.id === r.userId) || null,
+        }));
+        setPendingRequests(resolved);
       } catch (err) {
         console.error(err);
       } finally {
@@ -56,6 +95,81 @@ export default function CommunityAdminMembersPage() {
       setMembers(members.filter(m => m.id !== userId));
     } catch (e) {
       console.error(e);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleApproveRequest = async (request: any) => {
+    if (!profile) return;
+    const userId = request?.userId;
+    if (!userId) return;
+
+    setActionLoading(`approve:${request.id}`);
+    try {
+      const batch = writeBatch(db);
+      const communityRef = doc(db, 'communities', id as string);
+      const memberRef = doc(db, 'communities', id as string, 'members', userId);
+      const requestRef = doc(db, 'community_requests', request.id);
+
+      batch.update(communityRef, {
+        members: arrayUnion(userId),
+        memberCount: increment(1),
+        updatedAt: serverTimestamp(),
+      });
+      batch.set(memberRef, {
+        userId,
+        joinedAt: serverTimestamp(),
+        role: 'member',
+      }, { merge: true });
+      batch.update(requestRef, {
+        status: 'approved',
+        approvedBy: profile.uid,
+        approvedAt: serverTimestamp(),
+      });
+
+      batch.set(doc(collection(db, 'communities', id as string, 'audit_logs')), {
+        action: 'APPROVE_MEMBER',
+        actorId: profile.uid,
+        actorName: profile.displayName || 'Admin',
+        targetName: `User ${userId}`,
+        timestamp: serverTimestamp(),
+      });
+
+      await batch.commit();
+      setPendingRequests(pendingRequests.filter(r => r.id !== request.id));
+    } catch (e) {
+      console.error(e);
+      alert('Falha ao aprovar. Verifique permissões.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleRejectRequest = async (request: any) => {
+    if (!profile) return;
+    if (!confirm('Rejeitar este pedido de entrada?')) return;
+
+    setActionLoading(`reject:${request.id}`);
+    try {
+      await updateDoc(doc(db, 'community_requests', request.id), {
+        status: 'rejected',
+        approvedBy: profile.uid,
+        approvedAt: serverTimestamp(),
+      });
+
+      await addDoc(collection(db, 'communities', id as string, 'audit_logs'), {
+        action: 'REJECT_MEMBER',
+        actorId: profile.uid,
+        actorName: profile.displayName || 'Admin',
+        targetName: `User ${request?.userId || 'Unknown'}`,
+        timestamp: serverTimestamp(),
+      });
+
+      setPendingRequests(pendingRequests.filter(r => r.id !== request.id));
+    } catch (e) {
+      console.error(e);
+      alert('Falha ao rejeitar. Verifique permissões.');
     } finally {
       setActionLoading(null);
     }
@@ -91,6 +205,43 @@ export default function CommunityAdminMembersPage() {
         <h1 className="text-3xl font-extrabold text-foreground tracking-tight">Members</h1>
         <p className="text-muted-foreground mt-1">Manage who is in your community and their permissions.</p>
       </div>
+
+      {pendingRequests.length > 0 && (
+        <div className="bg-white rounded-3xl border border-border/50 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-border/50">
+            <h2 className="text-lg font-extrabold text-foreground">Pedidos de entrada</h2>
+            <p className="text-sm text-muted-foreground">Aprove ou rejeite quem pediu para entrar.</p>
+          </div>
+          <div className="divide-y divide-border/50">
+            {pendingRequests.map((req) => (
+              <div key={req.id} className="px-6 py-4 flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="font-bold text-foreground truncate">
+                    {req.user?.displayName || req.user?.username || req.userId}
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">{req.user?.email || req.userId}</div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => handleApproveRequest(req)}
+                    disabled={actionLoading === `approve:${req.id}`}
+                    className="text-xs font-bold bg-primary text-white px-4 py-2 rounded-xl hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    Aprovar
+                  </button>
+                  <button
+                    onClick={() => handleRejectRequest(req)}
+                    disabled={actionLoading === `reject:${req.id}`}
+                    className="text-xs font-bold bg-muted/50 text-foreground px-4 py-2 rounded-xl hover:bg-muted disabled:opacity-50"
+                  >
+                    Rejeitar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-3xl border border-border/50 shadow-sm overflow-hidden">
         <table className="w-full text-left border-collapse">

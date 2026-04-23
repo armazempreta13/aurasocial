@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Share2, Globe } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { renderTextWithLinks } from '@/lib/mentions';
 
 interface SharePostModalProps {
   isOpen: boolean;
@@ -100,9 +101,9 @@ export function SharePostModal({ isOpen, onClose, onConfirm, postAuthor, postCon
                 {t('share_modal.preview', 'Sharing post by')} {postAuthor}
               </p>
               <div className="relative">
-                <p className="text-[15px] text-foreground/80 leading-relaxed line-clamp-3 italic">
-                  "{postContent}"
-                </p>
+                <div className="text-[15px] text-foreground/80 leading-relaxed line-clamp-6 italic">
+                  “{renderTextWithLinks(postContent)}”
+                </div>
               </div>
             </div>
 

@@ -3,6 +3,7 @@
 import { X, ChevronLeft, ChevronRight, Download, Share2, MoreHorizontal } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useEffect, useState } from 'react';
+import { renderTextWithLinks } from '@/lib/mentions';
 
 interface LightboxProps {
   isOpen: boolean;
@@ -93,9 +94,9 @@ export function Lightbox({ isOpen, onClose, imageUrl, authorName, authorPhoto, c
           {/* Content */}
           <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
             {content && (
-              <p className="text-[15px] text-foreground mb-6 whitespace-pre-wrap leading-relaxed">
-                {content}
-              </p>
+              <div className="text-[15px] text-foreground mb-6 whitespace-pre-wrap leading-relaxed">
+                {renderTextWithLinks(content)}
+              </div>
             )}
             
             <div className="flex items-center gap-4 text-muted-foreground text-sm mb-4">

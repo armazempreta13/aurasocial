@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { db } from '@/firebase';
-import { collection, query, where, getDocs, orderBy, limit, deleteDoc, doc, addDoc, serverTimestamp } from 'firebase/firestore';
-import { Shield, Trash2, Loader2, MessageSquare } from 'lucide-react';
+import { collection, query, where, getDocs, orderBy, limit, deleteDoc, doc, addDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { Shield, Trash2, Loader2, MessageSquare, Check, XCircle } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 
 export default function CommunityAdminModerationStub() {
@@ -25,7 +25,8 @@ export default function CommunityAdminModerationStub() {
           limit(30)
         );
         const snapshot = await getDocs(q);
-        setPosts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        const raw = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as any));
+        setPosts(raw.filter((p: any) => (p.approvalStatus || 'approved') === 'pending'));
       } catch (err) {
         console.error(err);
       } finally {
@@ -35,21 +36,65 @@ export default function CommunityAdminModerationStub() {
     fetchPosts();
   }, [id]);
 
+  const logAction = async (action: string, targetName: string) => {
+    if (!profile) return;
+    await addDoc(collection(db, 'communities', id as string, 'audit_logs'), {
+      action,
+      actorId: profile.uid,
+      actorName: profile.displayName || 'Admin',
+      targetName,
+      timestamp: serverTimestamp()
+    });
+  };
+
+  const handleApprove = async (postId: string, authorName: string) => {
+    if (!profile) return;
+    setActionLoading(postId);
+    try {
+      await updateDoc(doc(db, 'posts', postId), {
+        approvalStatus: 'approved',
+        approvedBy: profile.uid,
+        approvedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      await logAction('APPROVE_POST', `Post by ${authorName}`);
+      setPosts(posts.filter(p => p.id !== postId));
+    } catch (err) {
+      console.error(err);
+      alert('Failed to approve post. Check permissions.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleReject = async (postId: string, authorName: string) => {
+    if (!profile) return;
+    if (!confirm('Reject this post? The author will not see it in the feed.')) return;
+    setActionLoading(postId);
+    try {
+      await updateDoc(doc(db, 'posts', postId), {
+        approvalStatus: 'rejected',
+        approvedBy: profile.uid,
+        approvedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      await logAction('REJECT_POST', `Post by ${authorName}`);
+      setPosts(posts.filter(p => p.id !== postId));
+    } catch (err) {
+      console.error(err);
+      alert('Failed to reject post. Check permissions.');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleDelete = async (postId: string, authorName: string) => {
     if (!profile) return;
     if (!confirm('Are you strictly sure you want to delete this post? This cannot be undone.')) return;
     setActionLoading(postId);
     try {
       await deleteDoc(doc(db, 'posts', postId));
-      
-      // Log the action
-      await addDoc(collection(db, 'communities', id as string, 'audit_logs'), {
-        action: 'DELETE_POST',
-        actorId: profile.uid,
-        actorName: profile.displayName || 'Admin',
-        targetName: `Post by ${authorName}`,
-        timestamp: serverTimestamp()
-      });
+      await logAction('DELETE_POST', `Post by ${authorName}`);
 
       setPosts(posts.filter(p => p.id !== postId));
     } catch (err) {
@@ -66,7 +111,7 @@ export default function CommunityAdminModerationStub() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-extrabold text-foreground tracking-tight">Content Moderation</h1>
-        <p className="text-muted-foreground mt-1">Review recently published content and manage moderation actions.</p>
+        <p className="text-muted-foreground mt-1">Approve or reject posts that are waiting for review.</p>
       </div>
 
       <div className="bg-white rounded-3xl border border-border/50 shadow-sm overflow-hidden">
@@ -75,8 +120,8 @@ export default function CommunityAdminModerationStub() {
             <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-500 mb-6 shadow-inner">
                <Shield className="w-10 h-10" />
             </div>
-            <h3 className="text-2xl font-bold mb-2">Clean Queue</h3>
-            <p className="text-muted-foreground mb-8 max-w-md">No recent posts found in this community. Your space is safe and clean.</p>
+            <h3 className="text-2xl font-bold mb-2">Fila vazia</h3>
+            <p className="text-muted-foreground mb-8 max-w-md">Nenhum post pendente no momento.</p>
           </div>
         ) : (
           <ul className="divide-y divide-border/50">
@@ -105,13 +150,29 @@ export default function CommunityAdminModerationStub() {
                    {actionLoading === post.id ? (
                       <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
                    ) : (
-                     <button 
-                       onClick={() => handleDelete(post.id, post.authorName || 'Unknown')}
-                       className="p-2.5 text-muted-foreground hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
-                       title="Delete Post"
-                     >
-                       <Trash2 className="w-5 h-5" />
-                     </button>
+                     <div className="flex items-center gap-2">
+                       <button
+                         onClick={() => handleApprove(post.id, post.authorName || 'Unknown')}
+                         className="p-2.5 text-muted-foreground hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors"
+                         title="Approve"
+                       >
+                         <Check className="w-5 h-5" />
+                       </button>
+                       <button
+                         onClick={() => handleReject(post.id, post.authorName || 'Unknown')}
+                         className="p-2.5 text-muted-foreground hover:text-orange-600 hover:bg-orange-50 rounded-xl transition-colors"
+                         title="Reject"
+                       >
+                         <XCircle className="w-5 h-5" />
+                       </button>
+                       <button 
+                         onClick={() => handleDelete(post.id, post.authorName || 'Unknown')}
+                         className="p-2.5 text-muted-foreground hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                         title="Delete Post"
+                       >
+                         <Trash2 className="w-5 h-5" />
+                       </button>
+                     </div>
                    )}
                 </div>
               </li>

@@ -4,7 +4,7 @@ import { useState, useEffect, memo, useMemo, useRef } from 'react';
 import { useInView } from 'react-intersection-observer';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Heart, MessageCircle, Share2, MoreHorizontal, Globe, Users, Lock, Bookmark, Trash2, ThumbsUp, CheckCircle, BadgeCheck, BarChart2, ShieldAlert, Repeat2, Send, Link2, CheckCheck, Clock, Sparkles, Flame, Zap, Pin } from 'lucide-react';
+import { Heart, MessageCircle, Share2, MoreHorizontal, Globe, Users, Lock, Bookmark, Trash2, ThumbsUp, CheckCircle, BadgeCheck, BarChart2, ShieldAlert, Repeat2, Send, Link2, CheckCheck, Clock, Sparkles, Flame, Zap, Pin, Loader2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '@/lib/store';
 import { db } from '@/firebase';
@@ -84,6 +84,12 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
   const authUid = user?.uid || null;
   const [localPost, setLocalPost] = useState(initialPost);
   const post = localPost;
+
+  // Sync with prop updates
+  useEffect(() => {
+    setLocalPost(initialPost);
+  }, [initialPost]);
+
   const normalizedHashtags = useMemo(() => {
     if (!Array.isArray(post?.hashtags)) return [] as string[];
     const normalized = post.hashtags.map((t: any) => normalizeHashtag(String(t || '')));
@@ -1373,7 +1379,24 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
               </div>
             )}
 
-            {sharedPost.videoUrl && (
+            {sharedPost.video && sharedPost.video.provider === 'youtube' ? (
+              <div className="mt-4 rounded-[28px] overflow-hidden border border-slate-100 shadow-2xl shadow-black/5 aspect-video group-hover/shared:scale-[1.01] transition-transform duration-700">
+                {sharedPost.video.status === 'processing' ? (
+                  <div className="w-full h-full bg-slate-100 flex flex-col items-center justify-center gap-3">
+                    <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                    <span className="text-sm font-bold text-slate-500">Processando vídeo...</span>
+                  </div>
+                ) : (
+                  <iframe
+                    src={`${sharedPost.video.embedUrl}?modestbranding=1&rel=0&iv_load_policy=3&controls=1&showinfo=0`}
+                    className="w-full h-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    title="Video player"
+                  />
+                )}
+              </div>
+            ) : sharedPost.videoUrl && (
               <div className="mt-4 rounded-[28px] overflow-hidden border border-slate-100 shadow-2xl shadow-black/5 group-hover/shared:scale-[1.01] transition-transform duration-700">
                 <video src={sharedPost.videoUrl} controls playsInline className="w-full max-h-[380px] object-cover" />
               </div>
@@ -1438,7 +1461,37 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
         </div>
       )}
 
-      {post.videoUrl && (
+      {post.video && post.video.provider === 'youtube' ? (
+        <div className="w-full bg-slate-100 overflow-hidden group relative aspect-video">
+          {post.video.status === 'processing' ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-slate-50">
+              <Loader2 className="w-10 h-10 animate-spin text-primary" />
+              <span className="text-[15px] font-black text-slate-400 uppercase tracking-widest">Vídeo em processamento</span>
+            </div>
+          ) : (
+            <>
+              {/* Overlay para esconder header do YT */}
+              <div className="absolute inset-0 pointer-events-none z-10 bg-gradient-to-b from-black/20 via-transparent to-transparent h-20 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              
+              <iframe
+                src={`${post.video.embedUrl}?modestbranding=1&rel=0&iv_load_policy=3&controls=1&showinfo=0`}
+                className="w-full h-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                title="Video player"
+              />
+            </>
+          )}
+
+          {showHeartOverlay && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+              <div className="animate-in zoom-in fade-in out-zoom-out out-fade-out fill-mode-forwards duration-700">
+                <Heart className="w-24 h-24 text-white fill-white drop-shadow-2xl opacity-90" />
+              </div>
+            </div>
+          )}
+        </div>
+      ) : post.videoUrl && (
         <div
           className="w-full bg-slate-100 overflow-hidden group relative min-h-[200px]"
           onDoubleClick={handleDoubleClick}

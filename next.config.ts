@@ -2,6 +2,9 @@ import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // Prevent Next from inferring a parent workspace root when multiple lockfiles exist.
+  // This also stabilizes output file tracing on Windows workspaces nested in monorepos.
+  outputFileTracingRoot: process.cwd(),
   reactStrictMode: true,
   eslint: {
     ignoreDuringBuilds: true,

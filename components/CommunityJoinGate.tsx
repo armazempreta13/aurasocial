@@ -21,6 +21,7 @@ interface JoinGateProps {
   communityId: string;
   communityName: string;
   currentVersion: number;
+  requireApproval?: boolean;
   onAcceptSuccess: () => void;
   onCancel: () => void;
   forceOverlay?: boolean;
@@ -30,6 +31,7 @@ export default function CommunityJoinGate({
   communityId,
   communityName,
   currentVersion,
+  requireApproval,
   onAcceptSuccess,
   onCancel,
   forceOverlay,
@@ -68,15 +70,24 @@ export default function CommunityJoinGate({
       const batch = writeBatch(db);
 
       if (!forceOverlay) {
-        batch.update(doc(db, 'communities', communityId), {
-          members: arrayUnion(profile.uid),
-          memberCount: increment(1),
-          updatedAt: serverTimestamp(),
-        });
-        batch.set(doc(db, 'communities', communityId, 'members', profile.uid), {
-          uid: profile.uid,
-          memberSince: serverTimestamp(),
-        });
+        if (requireApproval) {
+          batch.set(doc(db, 'community_requests', `${communityId}_${profile.uid}`), {
+            communityId,
+            userId: profile.uid,
+            status: 'pending',
+            createdAt: serverTimestamp(),
+          });
+        } else {
+          batch.update(doc(db, 'communities', communityId), {
+            members: arrayUnion(profile.uid),
+            memberCount: increment(1),
+            updatedAt: serverTimestamp(),
+          });
+          batch.set(doc(db, 'communities', communityId, 'members', profile.uid), {
+            uid: profile.uid,
+            memberSince: serverTimestamp(),
+          });
+        }
       }
 
       batch.set(doc(db, 'communities', communityId, 'rule_acceptances', profile.uid), {

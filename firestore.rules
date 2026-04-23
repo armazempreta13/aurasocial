@@ -264,6 +264,46 @@ service cloud.firestore {
              isValidTimestamp('updatedAt');
     }
 
+    // ===============================================================
+    // Helper Functions â€” Communities (roles, membership)
+    // ===============================================================
+    function communityDoc(communityId) {
+      return get(/databases/$(database)/documents/communities/$(communityId));
+    }
+
+    function isCommunityPublic(communityId) {
+      return communityDoc(communityId).data.type == 'Public';
+    }
+
+    function isCommunityMember(communityId) {
+      return isAuthenticated() && (
+        currentUid() == communityDoc(communityId).data.creatorId ||
+        (communityDoc(communityId).data.members is list && currentUid() in communityDoc(communityId).data.members)
+      );
+    }
+
+    function hasCommunityRole(communityId, role) {
+      return isAuthenticated() &&
+        communityDoc(communityId).data.roles is map &&
+        currentUid() in communityDoc(communityId).data.roles &&
+        communityDoc(communityId).data.roles[currentUid()] == role;
+    }
+
+    function isCommunityAdmin(communityId) {
+      return isAuthenticated() && (
+        currentUid() == communityDoc(communityId).data.creatorId ||
+        hasCommunityRole(communityId, 'admin') ||
+        isAdmin()
+      );
+    }
+
+    function isCommunityStaff(communityId) {
+      return isAuthenticated() && (
+        isCommunityAdmin(communityId) ||
+        hasCommunityRole(communityId, 'moderator')
+      );
+    }
+
     function isValidBookmark() {
       return hasRequiredFields(['userId', 'postId', 'createdAt']) &&
              isValidString('userId', 1, 128) &&
@@ -463,18 +503,69 @@ service cloud.firestore {
     // POSTS
     // ===============================================================
     match /posts/{postId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidPost() && request.resource.data.authorId == request.auth.uid;
+      allow read: if isAuthenticated() && (
+        // Non-community posts are readable for all authenticated users.
+        !('communityId' in resource.data) || resource.data.communityId == null ||
+        // Community posts: readable if approved (or legacy/missing), by author, or by community staff.
+        !('approvalStatus' in resource.data) || resource.data.approvalStatus == 'approved' ||
+        currentUid() == resource.data.authorId ||
+        isCommunityStaff(resource.data.communityId)
+      );
+
+      allow create: if isAuthenticated() &&
+        isValidPost() &&
+        request.resource.data.authorId == request.auth.uid &&
+        (
+          // Non-community post: always approved (or missing field).
+          !('communityId' in request.resource.data) || request.resource.data.communityId == null ||
+          // Community post: only members can create, and status depends on community settings.
+          (
+            isCommunityMember(request.resource.data.communityId) &&
+            (
+              // If posts require approval, non-staff must create as pending.
+              (
+                communityDoc(request.resource.data.communityId).data.security is map &&
+                communityDoc(request.resource.data.communityId).data.security.postRequiresApproval == true &&
+                !isCommunityStaff(request.resource.data.communityId) &&
+                request.resource.data.approvalStatus == 'pending'
+              ) ||
+              // Otherwise, members can create as approved (or omit field).
+              (
+                !(communityDoc(request.resource.data.communityId).data.security is map) ||
+                communityDoc(request.resource.data.communityId).data.security.postRequiresApproval != true ||
+                isCommunityStaff(request.resource.data.communityId)
+              ) &&
+              (!('approvalStatus' in request.resource.data) || request.resource.data.approvalStatus == 'approved')
+            )
+          )
+        );
+
       allow update: if isAuthenticated() && (
         affectedOnly([
           'likesCount', 'reactionCounts', 'score', 'commentsCount',
           'sharesCount', 'viewsCount', 'savesCount', 'updatedAt', 'moderation',
           'poll'
         ]) ||
-        (currentUid() == resource.data.authorId && isValidPost() && uidNotModified('authorId')) ||
+        (
+          currentUid() == resource.data.authorId &&
+          isValidPost() &&
+          uidNotModified('authorId') &&
+          uidNotModified('approvalStatus')
+        ) ||
+        // Community staff can approve/reject posts in their community.
+        (
+          ('communityId' in resource.data) &&
+          resource.data.communityId != null &&
+          isCommunityStaff(resource.data.communityId) &&
+          affectedOnly(['approvalStatus', 'approvedBy', 'approvedAt', 'updatedAt'])
+        ) ||
         isAdmin()
       );
-      allow delete: if isAuthenticated() && (currentUid() == resource.data.authorId || isAdmin());
+      allow delete: if isAuthenticated() && (
+        currentUid() == resource.data.authorId ||
+        isAdmin() ||
+        (('communityId' in resource.data) && resource.data.communityId != null && isCommunityStaff(resource.data.communityId))
+      );
     }
 
     // Post views tracking
@@ -763,21 +854,86 @@ service cloud.firestore {
         isValidCommunity() &&
         currentUid() == request.resource.data.creatorId;
       allow update: if isAuthenticated() && (
-        currentUid() == resource.data.creatorId ||
-        (currentUid() in resource.data.admins) ||
-        affectedOnly(['members', 'memberCount', 'postCount', 'updatedAt']) ||
-        isAdmin()
+        // Members can only self-join/leave via a constrained update.
+        (
+          affectedOnly(['members', 'memberCount', 'updatedAt']) &&
+          resource.data.members is list &&
+          request.resource.data.members is list &&
+          resource.data.memberCount is number &&
+          request.resource.data.memberCount is number &&
+          (
+            // Self-join: adds only currentUid and increments by 1
+            (
+              !(currentUid() in resource.data.members) &&
+              (currentUid() in request.resource.data.members) &&
+              request.resource.data.members.size() == resource.data.members.size() + 1 &&
+              request.resource.data.members.hasAll(resource.data.members) &&
+              request.resource.data.memberCount == resource.data.memberCount + 1
+            ) ||
+            // Self-leave: removes only currentUid and decrements by 1
+            (
+              (currentUid() in resource.data.members) &&
+              !(currentUid() in request.resource.data.members) &&
+              request.resource.data.members.size() == resource.data.members.size() - 1 &&
+              resource.data.members.hasAll(request.resource.data.members) &&
+              request.resource.data.memberCount == resource.data.memberCount - 1
+            )
+          )
+        ) ||
+
+        // Staff can add/remove a single member (approve/kick) with consistent counts.
+        (
+          isCommunityStaff(communityId) &&
+          affectedOnly(['members', 'memberCount', 'updatedAt']) &&
+          resource.data.members is list &&
+          request.resource.data.members is list &&
+          resource.data.memberCount is number &&
+          request.resource.data.memberCount is number &&
+          (
+            // Add exactly one member
+            (
+              request.resource.data.members.size() == resource.data.members.size() + 1 &&
+              request.resource.data.members.hasAll(resource.data.members) &&
+              request.resource.data.memberCount == resource.data.memberCount + 1
+            ) ||
+            // Remove exactly one member
+            (
+              request.resource.data.members.size() == resource.data.members.size() - 1 &&
+              resource.data.members.hasAll(request.resource.data.members) &&
+              request.resource.data.memberCount == resource.data.memberCount - 1
+            )
+          )
+        ) ||
+
+        // Staff can update community settings & moderation fields.
+        (
+          isCommunityStaff(communityId) &&
+          // Role grants are restricted to admins (or creator/global admin)
+          (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['roles']) ||
+            isCommunityAdmin(communityId)
+          )
+        ) ||
+
+        // Allow aggregate counters updates by staff or global admin.
+        (
+          affectedOnly(['postCount', 'updatedAt']) &&
+          (isCommunityStaff(communityId) || isAdmin())
+        )
       );
       allow delete: if isAuthenticated() && (
         currentUid() == resource.data.creatorId || isAdmin()
       );
 
       match /members/{memberId} {
-        allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && (
+        allow read: if isAuthenticated() && (
+          memberId == currentUid() ||
+          isCommunityMember(communityId) ||
+          isCommunityStaff(communityId)
+        );
+        allow create, update, delete: if isAuthenticated() && (
           currentUid() == memberId ||
-          currentUid() == get(/databases/$(database)/documents/communities/$(communityId)).data.creatorId ||
-          currentUid() in get(/databases/$(database)/documents/communities/$(communityId)).data.admins
+          isCommunityStaff(communityId)
         );
       }
 
@@ -785,19 +941,40 @@ service cloud.firestore {
       match /posts/{postId} {
         allow read: if isAuthenticated();
         allow write: if isAuthenticated() && (
-          currentUid() in get(/databases/$(database)/documents/communities/$(communityId)).data.members ||
-          currentUid() == get(/databases/$(database)/documents/communities/$(communityId)).data.creatorId
+          isCommunityMember(communityId) ||
+          isCommunityStaff(communityId)
         );
       }
 
       // Community announcements (only admins can post)
       match /announcements/{announcementId} {
         allow read: if isAuthenticated();
-        allow write: if isAuthenticated() && (
-          currentUid() == get(/databases/$(database)/documents/communities/$(communityId)).data.creatorId ||
-          currentUid() in get(/databases/$(database)/documents/communities/$(communityId)).data.admins ||
-          isAdmin()
+        allow write: if isAuthenticated() && isCommunityAdmin(communityId);
+      }
+
+      // Community rules / code of conduct (readable for all authed, writable by staff)
+      match /rules/{ruleId} {
+        allow read: if isAuthenticated();
+        allow create, update, delete: if isAuthenticated() && isCommunityStaff(communityId);
+      }
+
+      // Rules acceptance receipts (self-write, staff-read)
+      match /rule_acceptances/{userId} {
+        allow read: if isAuthenticated() && (
+          userId == currentUid() ||
+          isCommunityStaff(communityId)
         );
+        allow create, update: if isAuthenticated() && userId == currentUid();
+        allow delete: if isAdmin() || isCommunityAdmin(communityId);
+      }
+
+      // Audit logs (immutable trail) - staff can create/read
+      match /audit_logs/{logId} {
+        allow read: if isAuthenticated() && isCommunityStaff(communityId);
+        allow create: if isAuthenticated() &&
+          isCommunityStaff(communityId) &&
+          request.resource.data.actorId == currentUid();
+        allow delete: if isAdmin() || isCommunityAdmin(communityId);
       }
     }
 
@@ -806,13 +983,11 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (
         resource == null ||
         currentUid() == resource.data.userId ||
-        currentUid() == get(/databases/$(database)/documents/communities/$(resource.data.communityId)).data.creatorId ||
-        currentUid() in get(/databases/$(database)/documents/communities/$(resource.data.communityId)).data.admins
+        isCommunityStaff(resource.data.communityId)
       );
       allow create: if isAuthenticated() && currentUid() == request.resource.data.userId;
       allow update: if isAuthenticated() && (
-        currentUid() == get(/databases/$(database)/documents/communities/$(resource.data.communityId)).data.creatorId ||
-        currentUid() in get(/databases/$(database)/documents/communities/$(resource.data.communityId)).data.admins
+        isCommunityStaff(resource.data.communityId)
       );
       allow delete: if isAuthenticated() && (
         currentUid() == resource.data.userId ||

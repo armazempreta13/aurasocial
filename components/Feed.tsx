@@ -200,6 +200,11 @@ export function Feed({
         if (!hasAnyContent) return false;
         if (blockedUserIds.has(post.authorId)) return false;
         if (post.visibility === 'friends' && post.authorId !== profile?.uid && !friendIds.has(post.authorId) && !post.communityId) return false;
+        // Community approvals: hide pending/rejected items from the main feed.
+        if (post.communityId) {
+          const approval = (post.approvalStatus || 'approved') as string;
+          if (approval !== 'approved') return false;
+        }
         if (type === 'media' && !(post.imageUrl || post.videoUrl || post.hasImage || post.hasVideo)) return false;
         return true;
       });
@@ -273,7 +278,16 @@ export function Feed({
     
     return onSnapshot(q, (snap) => {
       if (snap.empty) return;
-      const latestId = snap.docs[0].id;
+      const latestDoc = snap.docs[0];
+      const latestData: any = latestDoc.data ? latestDoc.data() : null;
+
+      // Avoid surfacing "new posts" banners for community posts that are still pending approval.
+      if (latestData?.communityId) {
+        const approval = (latestData?.approvalStatus || 'approved') as string;
+        if (approval !== 'approved') return;
+      }
+
+      const latestId = latestDoc.id;
       const exists = allPosts.some(p => p.id === latestId);
       
       if (!exists && status === 'success' && allPosts.length > 0) {

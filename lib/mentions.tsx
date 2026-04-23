@@ -8,7 +8,7 @@ import Link from 'next/link';
 function parseInlineMarkdown(text: string, linkClassName: string, baseMentionUrl: string, baseHashtagUrl: string): React.ReactNode[] {
   // Regex order matters: check for 3 asterisks, then 2, then 1.
   // We use .+? to ensure there's content between asterisks, avoiding literal **** display.
-  const regex = /(\*\*\*.+?\*\*\*|\*\*.+?\*\*|\*.+?\*)/g;
+  const regex = /(\*\*\*[\s\S]+?\*\*\*|\*\*[\s\S]+?\*\*|\*[\s\S]+?\*)/g;
   const parts = text.split(regex);
   const nodes: React.ReactNode[] = [];
   let key = 0;
@@ -61,10 +61,6 @@ function parseInlineMarkdown(text: string, linkClassName: string, baseMentionUrl
   return nodes;
 }
 
-/**
- * Transforms text containing @username, #hashtag, **bold**, *italic*,
- * and > blockquote lines into React elements with links and formatting.
- */
 export function renderTextWithLinks(text: string, options: { 
   baseMentionUrl?: string; 
   baseHashtagUrl?: string;
@@ -74,32 +70,33 @@ export function renderTextWithLinks(text: string, options: {
   if (!text) return null;
 
   const {
-    baseMentionUrl = '/@',
-    baseHashtagUrl = '/explore?q=',
-    linkClassName = 'text-primary font-bold hover:underline'
+    baseMentionUrl = '/profile/',
+    baseHashtagUrl = '/explore?q=%23',
+    linkClassName = 'text-primary font-bold hover:underline transition-colors'
   } = options;
 
-  const lines = text.split('\n');
+  // Normalize line endings and split
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
   const elements: React.ReactNode[] = [];
 
   lines.forEach((line, lineIdx) => {
-    const isQuote = line.startsWith('> ');
-    const lineContent = isQuote ? line.slice(2) : line;
+    const isQuote = line.trimStart().startsWith('> ');
+    const lineContent = isQuote ? line.trimStart().slice(2) : line;
     const parsed = parseInlineMarkdown(lineContent, linkClassName, baseMentionUrl, baseHashtagUrl);
 
     if (isQuote) {
       elements.push(
         <span
           key={`line-${lineIdx}`}
-          className="block border-l-4 border-primary/30 bg-primary/5 pl-3 py-1 rounded-sm text-slate-700 my-1.5"
+          className="block border-l-4 border-primary/30 bg-primary/5 pl-3 py-1.5 rounded-r-xl text-slate-700 my-2 shadow-sm"
         >
-          {parsed}
+          {parsed.length > 0 ? parsed : '\u00A0'}
         </span>
       );
     } else {
       elements.push(
         <span key={`line-${lineIdx}`} className="block min-h-[1.2em]">
-          {parsed}
+          {parsed.length > 0 ? parsed : '\u00A0'}
         </span>
       );
     }

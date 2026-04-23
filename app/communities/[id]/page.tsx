@@ -32,14 +32,26 @@ import {
   Link2,
   CalendarDays,
   Eye,
+  Search,
+  MoreHorizontal,
+  ChevronDown,
+  X,
+  Plus,
+  Check,
+  LogOut,
+  Bell,
+  ShieldAlert,
 } from 'lucide-react';
 import { Feed } from '@/components/Feed';
 import { CreatePost } from '@/components/CreatePost';
 import { CommunitySettingsModal } from '@/components/CommunitySettingsModal';
 import CommunityJoinGate from '@/components/CommunityJoinGate';
 import { ConfirmModal } from '@/components/ConfirmModal';
+import { ActionModal } from '@/components/ActionModal';
+import { CommunityShareModal } from '@/components/CommunityShareModal';
 import Link from 'next/link';
 import Image from 'next/image';
+import { renderTextWithLinks } from '@/lib/mentions';
 import {
   buildCommunityCoverStyle,
   hexToRgba,
@@ -75,6 +87,30 @@ export default function CommunityDetailPage() {
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
   const [recentActivityCount, setRecentActivityCount] = useState(0);
   const [onlineCount, setOnlineCount] = useState(0);
+  const [joinRequestPending, setJoinRequestPending] = useState(false);
+  const [pendingApprovalCount, setPendingApprovalCount] = useState(0);
+  const [showMemberMenu, setShowMemberMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareModalTab, setShareModalTab] = useState<'invite' | 'share'>('invite');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [communitySearchQuery, setCommunitySearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'discussion' | 'highlights' | 'people' | 'media' | 'about'>('discussion');
+  const [memberPreview, setMemberPreview] = useState<any[]>([]);
+  const [muted, setMuted] = useState(false);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('.relative')) {
+        setShowMoreMenu(false);
+        setShowMemberMenu(false);
+        setSearchOpen(false);
+      }
+    };
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -111,6 +147,7 @@ export default function CommunityDetailPage() {
   useEffect(() => {
     if (!id || !profile?.uid || !community?.members?.includes(profile.uid)) {
       setMemberSince(null);
+      setMuted(false);
       return;
     }
 
@@ -119,10 +156,33 @@ export default function CommunityDetailPage() {
       if (memberSnap.exists() && memberSnap.data().memberSince?.toDate) {
         setMemberSince(memberSnap.data().memberSince.toDate());
       }
+      if (memberSnap.exists()) {
+        const data: any = memberSnap.data();
+        setMuted(!!data?.muted);
+      }
     };
 
     void loadMemberSince();
   }, [community?.members, id, profile?.uid]);
+
+  useEffect(() => {
+    if (!community?.members?.length) {
+      setMemberPreview([]);
+      return;
+    }
+
+    const sample = community.members.slice(0, 24);
+    const load = async () => {
+      try {
+        const snaps = await Promise.all(sample.map((uid: string) => getDoc(doc(db, 'users', uid))));
+        setMemberPreview(snaps.filter(s => s.exists()).map(s => ({ id: s.id, ...s.data() })));
+      } catch (e) {
+        console.warn('Member preview load failed:', e);
+        setMemberPreview([]);
+      }
+    };
+    void load();
+  }, [community?.members]);
 
   useEffect(() => {
     if (!id || !community) return;
@@ -160,6 +220,8 @@ export default function CommunityDetailPage() {
       const recentPosts = snapshot.docs
         .map((postDoc) => ({ id: postDoc.id, ...(postDoc.data() as any) }))
         .filter((post: any) => {
+          const approval = (post?.approvalStatus || 'approved') as string;
+          if (approval !== 'approved') return false;
           const timestamp = post.createdAt?.toDate ? post.createdAt.toDate().getTime() : 
                            (post.createdAt?.seconds ? post.createdAt.seconds * 1000 : null);
           return timestamp && timestamp >= weekAgo;
@@ -217,6 +279,8 @@ export default function CommunityDetailPage() {
       const aDayAgo = Date.now() - 24 * 60 * 60 * 1000;
       const recentCount = snapshot.docs.filter(docSnap => {
         const data = docSnap.data();
+        const approval = (data as any)?.approvalStatus || 'approved';
+        if (approval !== 'approved') return false;
         const ts = data.createdAt?.toMillis ? data.createdAt.toMillis() :
                    data.createdAt?.seconds ? data.createdAt.seconds * 1000 : 0;
         return ts >= aDayAgo;
@@ -228,6 +292,66 @@ export default function CommunityDetailPage() {
 
     return () => unsubscribe();
   }, [id]);
+
+  useEffect(() => {
+    if (!id || !profile?.uid || !community?.members?.includes(profile.uid)) {
+      setPendingApprovalCount(0);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'posts'),
+      where('communityId', '==', id),
+      orderBy('createdAt', 'desc'),
+      limit(50),
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const isStaff = community?.creatorId === profile.uid ||
+        community?.roles?.[profile.uid] === 'admin' ||
+        community?.roles?.[profile.uid] === 'moderator';
+
+      let count = 0;
+      snapshot.docs.forEach((docSnap) => {
+        const data: any = docSnap.data();
+        const approval = (data?.approvalStatus || 'approved') as string;
+        if (approval !== 'pending') return;
+        if (isStaff || data?.authorId === profile.uid) count += 1;
+      });
+
+      setPendingApprovalCount(count);
+    }, (error) => {
+      console.warn('Pending approval sync failed:', error);
+    });
+
+    return () => unsubscribe();
+  }, [community?.creatorId, community?.roles, community?.members, id, profile?.uid]);
+
+  useEffect(() => {
+    if (!id || !profile?.uid) {
+      setJoinRequestPending(false);
+      return;
+    }
+
+    const reqQuery = query(
+      collection(db, 'community_requests'),
+      where('userId', '==', profile.uid),
+      where('communityId', '==', id),
+      limit(5),
+    );
+
+    const unsubscribe = onSnapshot(reqQuery, (snapshot) => {
+      const pending = snapshot.docs.some((docSnap) => {
+        const data: any = docSnap.data();
+        return (data?.status || 'pending') === 'pending';
+      });
+      setJoinRequestPending(pending);
+    }, (error) => {
+      console.warn('Join request sync failed:', error);
+    });
+
+    return () => unsubscribe();
+  }, [id, profile?.uid]);
 
   useEffect(() => {
     if (!community?.members?.length) return;
@@ -260,6 +384,10 @@ export default function CommunityDetailPage() {
 
   const handleJoin = async () => {
     if (!profile || !community) return;
+    if (joinRequestPending) {
+      alert('Sua solicitação já está pendente de aprovação.');
+      return;
+    }
 
     if (
       community.gate_requireRulesAcceptance &&
@@ -267,6 +395,25 @@ export default function CommunityDetailPage() {
     ) {
       setIsForcedUpdate(false);
       setShowGate(true);
+      return;
+    }
+
+    if (community?.security?.requireApproval) {
+      try {
+        const batch = writeBatch(db);
+        const requestRef = doc(db, 'community_requests', `${community.id}_${profile.uid}`);
+        batch.set(requestRef, {
+          communityId: community.id,
+          userId: profile.uid,
+          status: 'pending',
+          createdAt: serverTimestamp(),
+        });
+        await batch.commit();
+        alert('Solicitação enviada. Aguarde a aprovação de um administrador.');
+      } catch (error) {
+        console.error('Error requesting to join community:', error);
+        alert('Não foi possível enviar sua solicitação agora.');
+      }
       return;
     }
 
@@ -320,6 +467,45 @@ export default function CommunityDetailPage() {
     }
   };
 
+  const handleShareCommunity = () => {
+    setShareModalTab('share');
+    setShowShareModal(true);
+  };
+
+  const handleInvite = () => {
+    setShareModalTab('invite');
+    setShowShareModal(true);
+  };
+
+  const handleReportCommunity = () => {
+    if (!user) return;
+    const reason = window.prompt('Por que você deseja denunciar esta comunidade?');
+    if (!reason) return;
+
+    void addDoc(collection(db, 'reports'), {
+      reporterId: user.uid,
+      targetId: community.id,
+      targetType: 'community',
+      reason,
+      status: 'pending',
+      createdAt: serverTimestamp(),
+    }).then(() => {
+      alert('Obrigado. Sua denúncia foi enviada para análise.');
+    });
+  };
+
+  const toggleMute = async () => {
+    if (!profile?.uid || !community?.id) return;
+    try {
+      const next = !muted;
+      await updateDoc(doc(db, 'communities', community.id, 'members', profile.uid), { muted: next });
+      setMuted(next);
+    } catch (e) {
+      console.error('Mute update failed:', e);
+      alert('Não foi possível atualizar suas notificações.');
+    }
+  };
+
   if (!isAuthReady || !user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -347,6 +533,7 @@ export default function CommunityDetailPage() {
   const isMember = community?.members?.includes(profile?.uid);
   const userRole = community?.roles?.[profile?.uid || ''] || 'member';
   const isAdmin = isMember && (community?.creatorId === profile?.uid || userRole === 'admin');
+  const isStaff = isMember && (community?.creatorId === profile?.uid || userRole === 'admin' || userRole === 'moderator');
   const isPublicCommunity = community?.type === 'Public';
   const coverStyle = !community?.coverURL ? buildCommunityCoverStyle(themeColor) : undefined;
 
@@ -357,14 +544,32 @@ export default function CommunityDetailPage() {
           communityId={community.id}
           communityName={community.name}
           currentVersion={community.rules_currentVersion}
+          requireApproval={!!community?.security?.requireApproval}
           forceOverlay={isForcedUpdate}
           onCancel={() => setShowGate(false)}
           onAcceptSuccess={() => {
             setShowGate(false);
-            alert(isForcedUpdate ? 'Regras atualizadas confirmadas.' : 'Agora você faz parte da comunidade.');
+            if (isForcedUpdate) {
+              alert('Regras atualizadas confirmadas.');
+            } else if (community?.security?.requireApproval) {
+              alert('Solicitação enviada. Aguarde a aprovação de um administrador.');
+            } else {
+              alert('Agora você faz parte da comunidade.');
+            }
           }}
         />
       )}
+
+      <ActionModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        onConfirm={() => void handleInvite()}
+        title="Convidar para a comunidade"
+        message="Vou copiar o link da comunidade para sua área de transferência. Depois é só colar onde quiser."
+        confirmLabel="Copiar convite"
+        cancelLabel="Cancelar"
+        variant="info"
+      />
 
       <div className="mb-6">
         <button
@@ -375,110 +580,250 @@ export default function CommunityDetailPage() {
           Voltar para comunidades
         </button>
 
-        <div className="group/comm mb-8 overflow-hidden rounded-[40px] border border-border/40 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.05)]">
-          <div className="relative h-[220px] overflow-hidden" style={coverStyle}>
-            {community.coverURL ? (
-              <Image
-                src={community.coverURL}
-                alt=""
-                fill
-                priority
-                sizes="(max-width: 1000px) 100vw, 1000px"
-                referrerPolicy="no-referrer"
-                className="object-cover transition-transform duration-1000 group-hover/comm:scale-105"
-              />
-            ) : null}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+        <div className="group/comm mb-8 rounded-[40px] border border-border/40 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.05)] relative">
+          <div className="relative h-[220px] z-40">
+            <div className="absolute inset-0 overflow-hidden rounded-t-[40px] z-0" style={coverStyle}>
+              {community.coverURL ? (
+                <Image
+                  src={community.coverURL}
+                  alt=""
+                  fill
+                  priority
+                  sizes="(max-width: 1000px) 100vw, 1000px"
+                  referrerPolicy="no-referrer"
+                  className="object-cover transition-transform duration-1000 group-hover/comm:scale-105"
+                />
+              ) : null}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+            </div>
 
-            <div className="absolute bottom-8 left-8 right-8 flex flex-col justify-between gap-6 md:flex-row md:items-end">
+            <div className="absolute bottom-8 left-8 right-8 z-50">
               <div className="flex items-start gap-4">
-                <div
-                  className="relative h-20 w-20 overflow-hidden rounded-3xl border border-white/20 bg-white/10 text-3xl font-black text-white shadow-2xl backdrop-blur-xl"
-                  style={{ boxShadow: `0 22px 44px ${hexToRgba(themeColor, 0.24)}` }}
-                >
-                  {community.image ? (
-                    <Image
-                      src={community.image}
-                      alt=""
-                      fill
-                      sizes="80px"
-                      referrerPolicy="no-referrer"
-                      className="object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center">
-                      {community.name.charAt(0)}
-                    </div>
-                  )}
+                <div className="relative shrink-0">
+                  <div 
+                    className="flex h-24 w-24 items-center justify-center rounded-[32px] border-4 border-white text-3xl font-black text-white shadow-xl overflow-hidden"
+                    style={{ backgroundColor: themeColor }}
+                  >
+                    {community.image ? (
+                      <Image
+                        src={community.image}
+                        alt=""
+                        fill
+                        className="object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      community.name.charAt(0).toUpperCase()
+                    )}
+                  </div>
                 </div>
-                <div className="text-white">
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <h1 className="text-3xl font-black tracking-tight sm:text-4xl">{community.name}</h1>
-                    {isAdmin && (
-                      <div
-                        className="flex items-center gap-1 rounded-full border px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider"
-                        style={{
-                          backgroundColor: hexToRgba(themeColor, 0.22),
-                          borderColor: hexToRgba(themeColor, 0.32),
-                        }}
-                      >
-                        <Shield className="h-3.5 w-3.5" /> Admin
+
+                <div className="mt-2 min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <h1 className="truncate text-3xl font-black tracking-tight text-white drop-shadow-sm">
+                      {community.name}
+                    </h1>
+                    {community.type === 'Private' && (
+                      <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/20 backdrop-blur-md">
+                        <Lock className="h-3.5 w-3.5 text-white" />
                       </div>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center gap-3 text-sm font-bold text-white/80">
-                    <span className="rounded-full bg-white/10 px-3 py-1 backdrop-blur-sm">
+                  <div className="mt-1 flex items-center gap-4 text-[14px] font-bold text-white/90">
+                    <span className="flex items-center gap-1.5">
+                      <Users className="h-4 w-4 opacity-70" />
                       {(community.memberCount || 0).toLocaleString('pt-BR')} membros
                     </span>
-                    <span className="rounded-full bg-white/10 px-3 py-1 backdrop-blur-sm">
+                    <span className="flex items-center gap-1.5">
+                      <Globe className="h-4 w-4 opacity-70" />
                       {community.type === 'Public' ? 'Pública' : 'Privada'}
                     </span>
-                    {community.createdAt?.toDate && (
-                      <span className="rounded-full bg-white/10 px-3 py-1 backdrop-blur-sm">
-                        Criada em{' '}
-                        {community.createdAt.toDate().toLocaleDateString('pt-BR', {
-                          month: 'short',
-                          year: 'numeric',
-                        })}
-                      </span>
+                  </div>
+                </div>
+
+                <div className="mt-2 flex shrink-0 gap-3">
+                  <button
+                    onClick={handleInvite}
+                    className="flex h-11 items-center gap-2 rounded-2xl border border-white/30 bg-white/10 px-5 text-[13px] font-black text-white backdrop-blur-md transition-all hover:bg-white/20 active:scale-95"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Convidar
+                  </button>
+                  <button
+                    onClick={handleShareCommunity}
+                    className="flex h-11 items-center gap-2 rounded-2xl border border-white/30 bg-white/10 px-5 text-[13px] font-black text-white backdrop-blur-md transition-all hover:bg-white/20 active:scale-95"
+                  >
+                    <Link2 className="h-4 w-4" />
+                    Compartilhar
+                  </button>
+
+                  <div className="relative group/actions">
+                    <button
+                      onClick={() => setShowMemberMenu(!showMemberMenu)}
+                      disabled={!isMember && joinRequestPending && community?.security?.requireApproval}
+                      className="flex h-11 items-center gap-2 rounded-2xl px-6 font-black text-white shadow-lg transition-all hover:opacity-95 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={
+                        !isMember && !(joinRequestPending && community?.security?.requireApproval)
+                          ? {
+                              backgroundColor: themeColor,
+                              boxShadow: `0 12px 24px ${hexToRgba(themeColor, 0.4)}`,
+                            }
+                          : {
+                              backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                              backdropFilter: 'blur(12px)',
+                            }
+                      }
+                    >
+                      {isMember ? (
+                        <>
+                          <Check className="h-4 w-4" />
+                          <span>Entrou</span>
+                          <ChevronDown className={`h-4 w-4 transition-transform ${showMemberMenu ? 'rotate-180' : ''}`} />
+                        </>
+                      ) : joinRequestPending && community?.security?.requireApproval ? (
+                        'Pendente'
+                      ) : (
+                        'Entrar'
+                      )}
+                    </button>
+
+                    {isMember && showMemberMenu && (
+                      <div className="absolute right-0 top-full mt-2 w-56 z-[100] animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="rounded-2xl border border-border/40 bg-white/95 p-2 shadow-2xl backdrop-blur-xl">
+                          <button
+                            onClick={() => {
+                              setShowMemberMenu(false);
+                              void toggleMute();
+                            }}
+                            className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[13px] font-bold text-slate-800 transition-all hover:bg-slate-100"
+                          >
+                            <Bell className={`h-4 w-4 ${muted ? 'text-red-500' : 'text-primary'}`} />
+                            {muted ? 'Ativar notificações' : 'Silenciar espaço'}
+                          </button>
+                          <div className="h-px bg-slate-100 my-1 mx-2" />
+                          <button
+                            onClick={() => {
+                              setShowMemberMenu(false);
+                              setIsLeaveModalOpen(true);
+                            }}
+                            className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[13px] font-bold text-red-500 transition-all hover:bg-red-50"
+                          >
+                            <LogOut className="h-4 w-4" />
+                            Sair da comunidade
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
 
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleJoinLeaveAction}
-                  className={`rounded-2xl px-8 py-3 text-[15px] font-black transition-all active:scale-95 ${
-                    isMember
-                      ? 'border border-white/20 bg-white/10 text-white backdrop-blur-md hover:bg-red-500/20 hover:text-red-100'
-                      : 'text-white shadow-xl'
-                  }`}
-                  style={
-                    isMember
-                      ? undefined
-                      : {
-                          backgroundColor: themeColor,
-                          boxShadow: `0 18px 38px ${hexToRgba(themeColor, 0.35)}`,
-                        }
-                  }
-                >
-                  {isMember ? 'Sair da comunidade' : 'Entrar na comunidade'}
-                </button>
-                {isAdmin && (
+          <div className="sticky top-[64px] z-30 border-t border-border/40 bg-white/80 px-8 py-3 backdrop-blur-md">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+                {[
+                  { id: 'discussion', label: 'Discussão', onClick: () => setActiveTab('discussion') },
+                  { id: 'highlights', label: 'Em destaque', onClick: () => setActiveTab('highlights') },
+                  { id: 'people', label: 'Pessoas', onClick: () => setActiveTab('people') },
+                  { id: 'media', label: 'Mídia', onClick: () => setActiveTab('media') },
+                  { id: 'about', label: 'Sobre', onClick: () => setActiveTab('about') },
+                ].map((tab) => (
                   <button
-                    onClick={() => router.push(`/communities/${community.id}/admin`)}
-                    className="group/settings flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 bg-white/10 text-white backdrop-blur-md transition-all hover:bg-white/20"
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`relative whitespace-nowrap rounded-xl px-5 py-2.5 text-[13px] font-black transition-all ${
+                      activeTab === tab.id
+                        ? 'text-white'
+                        : 'text-muted-foreground hover:bg-muted/50'
+                    }`}
                   >
-                    <Settings className="h-6 w-6 transition-transform group-hover/settings:rotate-90" />
+                    {activeTab === tab.id && (
+                      <div
+                        className="absolute inset-0 rounded-xl shadow-lg"
+                        style={{ backgroundColor: themeColor }}
+                      />
+                    )}
+                    <span className="relative z-10">{tab.label}</span>
                   </button>
-                )}
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0 z-50">
+                <div className="relative">
+                  <button
+                    onClick={() => setSearchOpen(!searchOpen)}
+                    className={`flex h-10 w-10 items-center justify-center rounded-xl transition-all ${
+                      searchOpen ? 'bg-primary/10 text-primary' : 'hover:bg-muted'
+                    }`}
+                    title="Buscar"
+                  >
+                    <Search className="h-4.5 w-4.5" />
+                  </button>
+
+                  {searchOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-[320px] rounded-2xl border border-border/40 bg-white p-3 shadow-2xl">
+                      <div className="flex items-center gap-3 rounded-xl border border-border/40 bg-muted/30 px-3 py-2">
+                        <Search className="h-4 w-4 text-muted-foreground" />
+                        <input
+                          value={communitySearchQuery}
+                          onChange={(e) => setCommunitySearchQuery(e.target.value)}
+                          placeholder="Buscar na comunidade..."
+                          className="w-full bg-transparent text-[13px] font-bold text-foreground placeholder:text-muted-foreground outline-none"
+                        />
+                        {communitySearchQuery.trim() && (
+                          <button onClick={() => setCommunitySearchQuery('')}>
+                            <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="relative">
+                  <button
+                    onClick={() => setShowMoreMenu(!showMoreMenu)}
+                    className={`flex h-10 w-10 items-center justify-center rounded-xl transition-all ${
+                      showMoreMenu ? 'bg-primary/10 text-primary' : 'hover:bg-muted'
+                    }`}
+                  >
+                    <MoreHorizontal className="h-5 w-5" />
+                  </button>
+
+                  {showMoreMenu && (
+                    <div className="absolute right-0 top-full mt-2 w-56 rounded-2xl border border-border/40 bg-white p-2 shadow-2xl">
+                      <button
+                        onClick={() => {
+                          setShowMoreMenu(false);
+                          void handleShareCommunity();
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-left text-[13px] font-bold text-slate-800 hover:bg-slate-100/50 rounded-xl transition-all"
+                      >
+                        <Link2 className="h-4 w-4 text-emerald-500" />
+                        Compartilhar link
+                      </button>
+                      <div className="h-px bg-slate-100/50 my-1 mx-2" />
+                      <button
+                        onClick={() => {
+                          setShowMoreMenu(false);
+                          void handleReportCommunity();
+                        }}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-left text-[13px] font-bold text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                      >
+                        <ShieldAlert className="h-4 w-4" />
+                        Denunciar
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
 
           <div className="grid gap-6 bg-white/50 p-8 backdrop-blur-sm lg:grid-cols-[1.15fr_0.85fr]">
-            <div className="group/sobre relative">
+            <div id="comm-about" className="group/sobre relative scroll-mt-24">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-[12px] font-black uppercase tracking-[0.2em] text-muted-foreground/45">
                   Sobre a comunidade
@@ -493,9 +838,9 @@ export default function CommunityDetailPage() {
                   </button>
                 )}
               </div>
-              <p className="max-w-4xl text-lg font-medium leading-relaxed text-foreground/80">
-                {community.description || 'Esta comunidade ainda não possui uma descrição.'}
-              </p>
+              <div className="max-w-4xl text-lg font-medium leading-relaxed text-foreground/80">
+                {community.description ? renderTextWithLinks(community.description) : 'Esta comunidade ainda não possui uma descrição.'}
+              </div>
 
               {!!community.pinnedTopics?.length && (
                 <div className="mt-5 flex flex-wrap gap-2">
@@ -576,19 +921,16 @@ export default function CommunityDetailPage() {
           <div
             className="group/highlight mb-8 overflow-hidden rounded-2xl border border-border/40 bg-white shadow-sm transition-all hover:shadow-md"
           >
-            <div className="flex items-center gap-4 px-5 py-3">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-primary/5 px-2 py-1">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-primary">Destaque</span>
-                </div>
+            <div className="flex items-center gap-4 bg-slate-50/50 p-4">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                <Eye className="h-5 w-5" />
               </div>
-
               <div className="flex flex-1 items-center gap-3 min-w-0">
                 <Link 
                   href={`/post/${weeklyHighlight.postId}`}
                   className="truncate text-[14px] font-bold text-slate-900 transition-colors hover:text-primary"
                 >
-                  “{weeklyHighlight.postTitle}”
+                  “{renderTextWithLinks(weeklyHighlight.postTitle)}”
                 </Link>
 
                 {weeklyHighlight.memberName && (
@@ -603,10 +945,9 @@ export default function CommunityDetailPage() {
                   </div>
                 )}
               </div>
-
               <Link 
                 href={`/post/${weeklyHighlight.postId}`}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-50 text-slate-400 transition-all hover:bg-primary/10 hover:text-primary"
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-white shadow-sm text-slate-400 hover:text-primary transition-all active:scale-90"
               >
                 <ArrowLeft className="h-4 w-4 rotate-180" />
               </Link>
@@ -615,11 +956,126 @@ export default function CommunityDetailPage() {
         )}
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-          <div className="lg:col-span-2">
+          <div id="comm-discussion" className="lg:col-span-2 scroll-mt-24">
             {isMember ? (
               <>
-                <CreatePost communityId={community.id} communityName={community.name} />
-                <Feed communityId={community.id} pinnedPostIds={community.pinnedPostIds} />
+                {pendingApprovalCount > 0 && (
+                  <div className="mb-6 rounded-[28px] border border-border/50 bg-white p-6 shadow-sm">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-black uppercase tracking-widest text-muted-foreground">
+                          Aguardando aprovação
+                        </p>
+                        <p className="mt-1 text-[15px] font-semibold text-foreground/85">
+                          {isStaff
+                            ? `${pendingApprovalCount} posts pendentes para revisar`
+                            : `Você tem ${pendingApprovalCount} post(s) pendente(s)`}
+                        </p>
+                      </div>
+                      {isStaff && (
+                        <button
+                          onClick={() => router.push(`/communities/${community.id}/admin/moderation`)}
+                          className="rounded-2xl px-5 py-3 text-[13px] font-black text-white transition-all hover:opacity-95 active:scale-95"
+                          style={{ backgroundColor: themeColor }}
+                        >
+                          Gerenciar posts
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <CreatePost
+                  communityId={community.id}
+                  communityName={community.name}
+                  communitySecurity={community?.security}
+                  isCommunityStaff={isStaff}
+                />
+                {activeTab === 'people' ? (
+                  <div className="rounded-[28px] border border-border/50 bg-white p-6 shadow-sm">
+                    <div className="mb-4 flex items-center justify-between gap-4">
+                      <div>
+                        <h3 className="text-lg font-extrabold text-foreground">Pessoas</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {(community.memberCount || 0).toLocaleString('pt-BR')} membros
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      {memberPreview.map((m) => (
+                        <Link
+                          key={m.id}
+                          href={`/profile/${m.id}`}
+                          className="flex items-center gap-3 rounded-2xl border border-border/40 bg-white p-3 transition-colors hover:bg-muted/30"
+                        >
+                          <div className="h-10 w-10 overflow-hidden rounded-2xl bg-muted">
+                            {m.photoURL ? (
+                              <img src={m.photoURL} className="h-full w-full object-cover" alt="" />
+                            ) : null}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate text-[13px] font-black text-foreground">{m.displayName || m.username || 'Membro'}</div>
+                            <div className="truncate text-[11px] font-semibold text-muted-foreground">
+                              @{String(m.username || m.displayName || m.id).replace(/\s+/g, '').toLowerCase()}
+                            </div>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ) : activeTab === 'media' ? (
+                  <Feed communityId={community.id} type="media" searchQuery={communitySearchQuery} />
+                ) : activeTab === 'highlights' ? (
+                  <>
+                    {weeklyHighlight ? (
+                      <div className="mb-6 rounded-[28px] border border-border/50 bg-white p-6 shadow-sm">
+                        <p className="text-sm font-black uppercase tracking-widest text-muted-foreground">Em destaque</p>
+                        <Link href={`/post/${weeklyHighlight.postId}`} className="mt-2 block text-[16px] font-extrabold text-foreground hover:text-primary">
+                          {renderTextWithLinks(weeklyHighlight.postTitle)}
+                        </Link>
+                        {weeklyHighlight.memberName ? (
+                          <p className="mt-2 text-sm font-semibold text-muted-foreground">
+                            por @{weeklyHighlight.memberName.replace(/\s+/g, '').toLowerCase()}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="mb-6 rounded-[28px] border border-border/50 bg-white p-6 shadow-sm">
+                        <p className="text-sm font-black uppercase tracking-widest text-muted-foreground">Em destaque</p>
+                        <p className="mt-2 text-sm text-muted-foreground">Ainda não há destaque desta semana.</p>
+                      </div>
+                    )}
+                    <Feed communityId={community.id} pinnedPostIds={community.pinnedPostIds} searchQuery={communitySearchQuery} />
+                  </>
+                ) : activeTab === 'about' ? (
+                  <div className="rounded-[28px] border border-border/50 bg-white p-6 shadow-sm">
+                    <p className="text-sm font-black uppercase tracking-widest text-muted-foreground">Sobre</p>
+                    <div className="mt-2 text-[15px] leading-7 text-foreground/85">
+                      {community.description ? renderTextWithLinks(community.description) : 'Esta comunidade ainda não possui uma descrição.'}
+                    </div>
+                    {!!community.pinnedTopics?.length && (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {community.pinnedTopics.map((topic: string) => (
+                          <span
+                            key={topic}
+                            className="rounded-full px-3 py-1 text-[12px] font-bold"
+                            style={{
+                              color: themeColor,
+                              backgroundColor: hexToRgba(themeColor, 0.1),
+                            }}
+                          >
+                            #{topic}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <Feed
+                    communityId={community.id}
+                    pinnedPostIds={community.pinnedPostIds}
+                    searchQuery={communitySearchQuery}
+                  />
+                )}
               </>
             ) : isPublicCommunity ? (
               <div className="space-y-4">
@@ -654,9 +1110,9 @@ export default function CommunityDetailPage() {
                         </p>
                       </div>
                     </div>
-                    <p className="mb-4 whitespace-pre-wrap text-[15px] leading-7 text-foreground/85">
-                      {post.content}
-                    </p>
+                    <div className="mb-4 text-[15px] leading-7 text-foreground/85">
+                      {renderTextWithLinks(post.content)}
+                    </div>
                     <div className="flex items-center gap-5 text-xs font-semibold text-muted-foreground">
                       <span>{post.likesCount || 0} curtidas</span>
                       <span>{post.commentsCount || 0} comentários</span>
@@ -667,10 +1123,15 @@ export default function CommunityDetailPage() {
                 <div className="rounded-[28px] border border-dashed border-border/60 bg-white p-8 text-center">
                   <button
                     onClick={handleJoinLeaveAction}
-                    className="rounded-2xl px-8 py-3 font-bold text-white transition-all hover:opacity-95"
+                    disabled={!!community?.security?.requireApproval && joinRequestPending}
+                    className="rounded-2xl px-8 py-3 font-bold text-white transition-all hover:opacity-95 disabled:opacity-60 disabled:cursor-not-allowed"
                     style={{ backgroundColor: themeColor }}
                   >
-                    Entre na comunidade para ver tudo
+                    {!!community?.security?.requireApproval
+                      ? joinRequestPending
+                        ? 'Aguardando aprovação do administrador'
+                        : 'Pedir para entrar'
+                      : 'Entre na comunidade para ver tudo'}
                   </button>
                 </div>
               </div>
@@ -800,6 +1261,13 @@ export default function CommunityDetailPage() {
         confirmText={t('common.leave', 'Sair')}
         cancelText={t('common.cancel', 'Cancelar')}
         variant="danger"
+      />
+
+      <CommunityShareModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        community={community}
+        defaultTab={shareModalTab}
       />
     </AppLayout>
   );

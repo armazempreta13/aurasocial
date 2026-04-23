@@ -3,6 +3,7 @@
 import { auth, storage } from '@/firebase';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { uploadImage, UploadResult } from '@/lib/image-utils';
+import { compressVideoSuper } from '@/lib/video-compress';
 
 export type MediaKind = 'image' | 'video';
 
@@ -24,8 +25,8 @@ export async function uploadMedia(file: File): Promise<MediaUploadResult> {
     throw new Error('Tipo de arquivo inválido. Envie uma foto ou vídeo.');
   }
 
-  // Keep an upper bound to avoid accidental huge uploads.
-  if (file.size > 80 * 1024 * 1024) {
+  // Upper bound to avoid catastrophic client-side work.
+  if (file.size > 250 * 1024 * 1024) {
     throw new Error('Vídeo muito grande. Tamanho máximo: 80MB.');
   }
 

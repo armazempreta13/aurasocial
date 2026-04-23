@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next';
 import { isAdmin } from '@/lib/admin';
 import { LayoutDashboard } from 'lucide-react';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
+import { renderTextWithLinks } from '@/lib/mentions';
 
 export default function ProfilePage() {
   const { t } = useTranslation('common');
@@ -357,9 +358,9 @@ export default function ProfilePage() {
                 {viewedUser.username && (
                   <p className="text-primary font-bold text-[16px] mb-2">@{viewedUser.username}</p>
                 )}
-                <p className="text-muted-foreground/80 text-[15px] max-w-[500px] mb-6 leading-7 font-medium mx-auto">
-                  {viewedUser.bio || t('profile_page.default_bio', 'Exploring the digital frontier. Passionate about design, technology, and building communities. 🚀')}
-                </p>
+                <div className="text-muted-foreground/80 text-[15px] max-w-[500px] mb-6 leading-7 font-medium mx-auto">
+                  {viewedUser.bio ? renderTextWithLinks(viewedUser.bio) : t('profile_page.default_bio', 'Exploring the digital frontier. Passionate about design, technology, and building communities. 🚀')}
+                </div>
               </div>
 
               {/* Stats & Info - Modern Pill Design */}

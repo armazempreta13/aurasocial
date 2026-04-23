@@ -17,6 +17,7 @@ import Link from 'next/link';
 import { TimeAgo } from './TimeAgo';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'next/navigation';
+import { renderTextWithLinks } from '@/lib/mentions';
 
 const DROPDOWN_EVENT = 'topnav:dropdown-open';
 
@@ -157,7 +158,9 @@ function NotifRow({
               {getMessage()}
             </p>
             {n.extraText && (
-              <p className="text-[12px] text-slate-400 mt-1 line-clamp-1 italic bg-slate-50 rounded-lg px-2 py-1 border border-slate-100/50">&ldquo;{n.extraText}&rdquo;</p>
+              <div className="text-[12px] text-slate-400 mt-1 line-clamp-2 italic bg-slate-50 rounded-lg px-2 py-1 border border-slate-100/50">
+                &ldquo;{renderTextWithLinks(n.extraText)}&rdquo;
+              </div>
             )}
             <p className={`text-[11px] mt-1.5 font-bold uppercase tracking-wider opacity-60 ${colorCls.icon}`}>
               {n.createdAt ? (

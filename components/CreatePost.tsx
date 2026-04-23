@@ -18,7 +18,17 @@ import { soundEffects } from '@/lib/sound-effects';
 import { validateContent } from '@/lib/moderation/utils';
 import { ActionModal } from './ActionModal';
 
-export function CreatePost({ communityId, communityName }: { communityId?: string, communityName?: string }) {
+export function CreatePost({
+  communityId,
+  communityName,
+  communitySecurity,
+  isCommunityStaff,
+}: {
+  communityId?: string;
+  communityName?: string;
+  communitySecurity?: any;
+  isCommunityStaff?: boolean;
+}) {
   const { t } = useTranslation('common');
   const queryClient = useQueryClient();
   const { profile } = useAppStore();
@@ -31,6 +41,7 @@ export function CreatePost({ communityId, communityName }: { communityId?: strin
   const [visibility, setVisibility] = useState<'public' | 'friends'>('public');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [youtubeVideo, setYoutubeVideo] = useState<{ videoId: string, watchUrl: string, embedUrl: string } | null>(null);
   const [uploadKind, setUploadKind] = useState<MediaKind>('image');
   const [isDragging, setIsDragging] = useState(false);
   const [mentionSearch, setMentionSearch] = useState<{ text: string, index: number } | null>(null);
@@ -260,25 +271,61 @@ export function CreatePost({ communityId, communityName }: { communityId?: strin
     
     setIsUploading(true);
     try {
-      const kind: MediaKind = file.type.startsWith('video/') ? 'video' : 'image';
-      setUploadKind(kind);
-      const result = await uploadMedia(file);
+      if (file.type.startsWith('video/')) {
+        setUploadKind('video');
+        
+        // Frontend validation
+        const maxSize = 100 * 1024 * 1024; // 100MB
+        if (file.size > maxSize) {
+          throw new Error('O vídeo é muito grande. O limite é de 100MB.');
+        }
 
-      if (result.kind === 'video') {
-        setVideoUrl(result.url);
-        setVideoMetadata(result);
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch('/api/youtube/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.details || errorData.error || 'Falha no upload para o YouTube');
+        }
+
+        const data = await response.json();
+        setYoutubeVideo({
+          videoId: data.videoId,
+          watchUrl: data.watchUrl,
+          embedUrl: data.embedUrl
+        });
+        setVideoUrl(data.watchUrl); // For preview purposes
+        setVideoMetadata({
+          kind: 'video',
+          url: data.watchUrl,
+          display_url: data.watchUrl,
+          delete_url: '',
+          width: 0,
+          height: 0,
+          mime: file.type,
+          size: file.size,
+        } as any);
+        
         setImageUrl('');
         setImageMetadata(null);
       } else {
+        setUploadKind('image');
+        const result = await uploadMedia(file);
         setImageUrl(result.url);
         setImageMetadata(result);
         setVideoUrl('');
         setVideoMetadata(null);
+        setYoutubeVideo(null);
       }
       setShowImageInput(false);
     } catch (error: any) {
       console.error('Upload error:', error);
-      alert(error.message || 'Upload failed. Please try again.');
+      alert(error.message || 'Upload falhou. Por favor, tente novamente.');
     } finally {
       setIsUploading(false);
     }
@@ -344,6 +391,11 @@ export function CreatePost({ communityId, communityName }: { communityId?: strin
     // Important: enqueue the Firestore write before exposing the post in the UI to avoid "No document to update".
     const postRef = doc(collection(db, 'posts'));
     const tempId = postRef.id;
+
+    const postRequiresApproval = !!(communityId && communitySecurity?.postRequiresApproval);
+    const approvalStatus: 'approved' | 'pending' =
+      communityId && postRequiresApproval && !isCommunityStaff ? 'pending' : 'approved';
+
     const optimisticPost = {
       id: tempId,
       authorId: profile.uid,
@@ -355,11 +407,21 @@ export function CreatePost({ communityId, communityName }: { communityId?: strin
       imageUrl: imageUrl.trim() || null,
       hasImage: !!imageUrl.trim(),
       videoUrl: videoUrl.trim() || null,
-      hasVideo: !!videoUrl.trim(),
+      hasVideo: !!videoUrl.trim() || !!youtubeVideo,
+      video: youtubeVideo ? {
+        provider: "youtube",
+        videoId: youtubeVideo.videoId,
+        watchUrl: youtubeVideo.watchUrl,
+        embedUrl: youtubeVideo.embedUrl,
+        status: "ready"
+      } : null,
       hasPoll: hasPoll,
       visibility: communityId ? 'public' : visibility,
       communityId: communityId || null,
       communityName: communityName || null,
+      approvalStatus,
+      approvedBy: null,
+      approvedAt: null,
       likesCount: 0,
       commentsCount: 0,
       sharesCount: 0,
@@ -387,6 +449,9 @@ export function CreatePost({ communityId, communityName }: { communityId?: strin
       ...postData,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
+      approvalStatus,
+      approvedBy: approvalStatus === 'approved' && isCommunityStaff ? profile.uid : null,
+      approvedAt: approvalStatus === 'approved' && isCommunityStaff ? serverTimestamp() : null,
       moderation: {
         status: modResult.status,
         reasons: modResult.reasons,
@@ -413,7 +478,10 @@ export function CreatePost({ communityId, communityName }: { communityId?: strin
       if ((qSearchQuery || '').toString().trim() !== '') return false;
 
       // Community post → only inject into that community feed
-      if (communityId) return qCommunityId === communityId;
+      if (communityId) {
+        if (approvalStatus !== 'approved') return false;
+        return qCommunityId === communityId;
+      }
 
       // Profile/user feed for me (and global feeds)
       if (qUserId && qUserId !== profile.uid) return false;
@@ -446,10 +514,15 @@ export function CreatePost({ communityId, communityName }: { communityId?: strin
     setImageMetadata(null);
     setVideoUrl('');
     setVideoMetadata(null);
+    setYoutubeVideo(null);
     setShowImageInput(false);
     setShowPoll(false);
     setPollOptions(['', '']);
     soundEffects.play('success');
+
+    if (communityId && approvalStatus === 'pending') {
+      alert(t('create_post.pending_approval', 'Seu post foi enviado e est\u00e1 aguardando aprova\u00e7\u00e3o do administrador.'));
+    }
 
     try {
       // Wait for the write to be acknowledged in the background
