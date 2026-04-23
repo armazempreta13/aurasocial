@@ -162,6 +162,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             createdAt: data.createdAt?.toMillis?.() ?? Date.now(),
             lastMessageTime: data.lastMessageTime?.toMillis?.() ?? data.updatedAt?.toMillis?.() ?? 0,
             lastMessageSenderId: data.lastMessageSenderId ?? null,
+            lastMessage: data.lastMessage ?? null,
           };
         });
 

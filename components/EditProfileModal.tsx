@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { X, Camera, Image as ImageIcon, Loader2, Upload } from 'lucide-react';
-import { doc, updateDoc, query, collection, where, getDocs } from 'firebase/firestore';
+import { doc, updateDoc, query, collection, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import { db } from '@/firebase';
 import { useAppStore } from '@/lib/store';
 import { handleFirestoreError, OperationType } from '@/lib/firebase-errors';
