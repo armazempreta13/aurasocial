@@ -166,6 +166,7 @@ service cloud.firestore {
              isValidOptionalBool('hasImage') &&
              isValidOptionalBool('hasVideo') &&
              isValidOptionalBool('hasAudio') &&
+             isValidOptionalBool('hasPoll') &&
              isValidOptionalString('videoUrl', 0, 1000) &&
              isValidOptionalString('audioUrl', 0, 1000) &&
              isValidOptionalString('gifUrl', 0, 1000) &&
@@ -503,7 +504,7 @@ service cloud.firestore {
     // ===============================================================
     match /posts/{postId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidPost() && uidUnchanged('authorId');
+      allow create: if isAuthenticated() && isValidPost() && request.resource.data.authorId == request.auth.uid;
       allow update: if isAuthenticated() && (
         affectedOnly([
           'likesCount', 'reactionCounts', 'score', 'commentsCount',
