@@ -5,6 +5,7 @@ import { useAppStore } from '@/lib/store';
 import { Feed } from './Feed';
 import { CreatePost } from './CreatePost';
 import { TopNav } from './TopNav';
+import { BottomNav } from './BottomNav';
 import '@/lib/i18n';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 
@@ -68,7 +69,7 @@ export function AppLayout({
             )}
 
             {/* Main Content */}
-            <main className={`w-full ${wide ? 'max-w-[1000px]' : 'max-w-[640px]'} px-4 pb-12 transition-all duration-300 ${focusMode || (hideSidebar && hideRightPanel) ? 'mx-auto' : ''} ${showSidebar ? 'xl:ml-[280px]' : ''} ${showRightPanel ? 'lg:mr-[320px]' : ''}`}>
+            <main className={`w-full ${wide ? 'max-w-[1000px]' : 'max-w-[640px]'} px-4 pb-20 md:pb-12 transition-all duration-300 ${focusMode || (hideSidebar && hideRightPanel) ? 'mx-auto' : ''} ${showSidebar ? 'xl:ml-[280px]' : ''} ${showRightPanel ? 'lg:mr-[320px]' : ''}`}>
               {children || (
                 <div className="space-y-6 pt-6">
                   <CreatePost />
@@ -88,6 +89,7 @@ export function AppLayout({
           </>
         )}
       </div>
+      <BottomNav />
     </div>
   );
 }

@@ -1589,24 +1589,24 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
                 : 'text-slate-500 hover:bg-slate-50'
             }`}
           >
-            <Heart className={`w-5 h-5 ${activePostReaction ? 'fill-current' : ''}`} />
-            <span className="text-[15px] font-bold">Curtir</span>
+            <Heart className={`w-5 h-5 md:w-5 md:h-5 ${activePostReaction ? 'fill-current' : ''}`} />
+            <span className="hidden sm:inline text-[15px] font-bold">Curtir</span>
           </button>
           <div className="w-[1px] h-6 bg-slate-100 mx-1" />
           <button 
             onClick={() => setShowComments(!showComments)}
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-slate-500 hover:bg-slate-50 transition-all duration-300"
           >
-            <MessageCircle className="w-5 h-5" />
-            <span className="text-[15px] font-bold">Comentar</span>
+            <MessageCircle className="w-5 h-5 md:w-5 md:h-5" />
+            <span className="hidden sm:inline text-[15px] font-bold">Comentar</span>
           </button>
           <div className="w-[1px] h-6 bg-slate-100 mx-1" />
           <button 
             onClick={handleShare}
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-slate-500 hover:bg-slate-50 transition-all duration-300"
           >
-            <Share2 className="w-5 h-5" />
-            <span className="text-[15px] font-bold">Compartilhar</span>
+            <Share2 className="w-5 h-5 md:w-5 md:h-5" />
+            <span className="hidden sm:inline text-[15px] font-bold">Compartilhar</span>
           </button>
           <div className="w-[1px] h-6 bg-slate-100 mx-1" />
           <div className="relative flex-1">
@@ -1616,8 +1616,8 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
                 isBookmarked ? 'text-amber-500 bg-amber-50/80 shadow-sm' : 'text-slate-500 hover:bg-slate-50'
               }`}
             >
-              <Bookmark className={`w-5 h-5 ${isBookmarked ? 'fill-current' : ''}`} />
-              <span className="text-[15px] font-bold">Salvar</span>
+              <Bookmark className={`w-5 h-5 md:w-5 md:h-5 ${isBookmarked ? 'fill-current' : ''}`} />
+              <span className="hidden sm:inline text-[15px] font-bold">Salvar</span>
             </button>
             <AnimatePresence>
               {showBookmarkFeedback && (

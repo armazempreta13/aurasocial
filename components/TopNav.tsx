@@ -69,9 +69,9 @@ export function TopNav() {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 h-[64px] bg-white/80 backdrop-blur-lg border-b border-border z-50 flex items-center justify-between px-6 transition-all duration-300">
+      <header className="fixed top-0 left-0 right-0 h-[64px] bg-white/80 backdrop-blur-lg border-b border-border z-50 flex items-center justify-between px-3 md:px-6 transition-all duration-300">
         {/* Left: Logo & Search trigger */}
-        <div className="flex items-center gap-4 w-[280px]">
+        <div className="flex items-center gap-2 md:gap-4 w-auto md:w-[280px]">
           <Link href="/feed">
             <Logo className="h-9" />
           </Link>
@@ -120,9 +120,18 @@ export function TopNav() {
         </div>
 
         {/* Right: Profile & Actions */}
-        <div className="flex items-center justify-end gap-3 w-[280px]">
-          <FocusModeToggle />
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-end gap-1.5 md:gap-3 w-auto md:w-[280px]">
+          <button
+            type="button"
+            onClick={() => setIsSearchOpen(true)}
+            className="md:hidden p-2 rounded-full hover:bg-muted text-muted-foreground transition-colors"
+          >
+            <Search className="w-5 h-5" />
+          </button>
+          <div className="hidden md:block">
+            <FocusModeToggle />
+          </div>
+          <div className="flex items-center gap-1 md:gap-2">
             <MessagesDropdown />
             <NotificationsDropdown />
           </div>
