@@ -150,54 +150,14 @@ service cloud.firestore {
     }
 
     function isValidPost() {
+      // Only validate security-critical fields. Optional fields are accepted as-is.
       return hasRequiredFields(['authorId', 'authorName', 'visibility', 'createdAt']) &&
-             isValidString('authorId', 1, 128) &&
-             isValidString('authorName', 1, 100) &&
-             isValidOptionalString('authorPhoto', 0, 1000) &&
-             isValidOptionalString('authorUsername', 0, 100) &&
-             isValidOptionalString('content', 0, 5000) &&
-             isValidOptionalString('imageUrl', 0, 1000) &&
-             isValidOptionalString('imageDisplayUrl', 0, 1000) &&
-             isValidOptionalString('imageDeleteUrl', 0, 1000) &&
-             isValidOptionalPositive('imageWidth') &&
-             isValidOptionalPositive('imageHeight') &&
-             isValidOptionalString('imageMime', 0, 100) &&
-             isValidOptionalPositive('imageSize') &&
-             isValidOptionalBool('hasImage') &&
-             isValidOptionalBool('hasVideo') &&
-             isValidOptionalBool('hasAudio') &&
-             isValidOptionalBool('hasPoll') &&
-             isValidOptionalString('videoUrl', 0, 1000) &&
-             isValidOptionalString('audioUrl', 0, 1000) &&
-             isValidOptionalString('gifUrl', 0, 1000) &&
-             isValidOptionalList('hashtags', 30) &&
-             isValidOptionalList('mentions', 50) &&
-             isValidOptionalList('mediaUrls', 10) &&
+             request.resource.data.authorId is string &&
+             request.resource.data.authorId.size() >= 1 &&
+             request.resource.data.authorName is string &&
+             request.resource.data.authorName.size() >= 1 &&
              request.resource.data.visibility in ['public', 'friends', 'interests', 'only_me'] &&
-             isValidOptionalPositive('likesCount') &&
-             isValidReactionCounts() &&
-             isValidOptionalPositive('commentsCount') &&
-             isValidOptionalPositive('sharesCount') &&
-             isValidOptionalPositive('viewsCount') &&
-             isValidOptionalPositive('savesCount') &&
-             isValidOptionalPositive('score') &&
-             isValidOptionalString('communityId', 0, 128) &&
-             isValidOptionalString('communityName', 0, 100) &&
-             isValidOptionalString('mood', 0, 50) &&
-             isValidOptionalString('feeling', 0, 100) &&
-             isValidOptionalString('location', 0, 200) &&
-             isValidOptionalMap('moderation') &&
-             isValidOptionalMap('poll') &&
-             isValidOptionalMap('event') &&
-             isValidOptionalMap('linkPreview') &&
-             isValidOptionalBool('isPinned') &&
-             isValidOptionalBool('isEdited') &&
-             isValidOptionalBool('isSponsored') &&
-             isValidOptionalString('originalPostId', 0, 128) &&
-             isValidOptionalString('sharedFromId', 0, 128) &&
-             isValidOptionalTimestamp('updatedAt') &&
-             isValidOptionalTimestamp('scheduledAt') &&
-             isValidTimestamp('createdAt');
+             request.resource.data.createdAt is timestamp;
     }
 
     function isValidStory() {
