@@ -1,0 +1,207 @@
+﻿import { BotUser } from '../models/bot.types';
+import { BotSystemConfig } from '../models/bot-config.types';
+import { generatePost } from '../generators/post-generator';
+import { generateComment, shouldGenerateComment } from '../generators/comment-generator';
+import { getBotStorage } from '../storage/bot-storage';
+import { getBehaviorEngine } from './behavior-engine';
+import { getBotMonitor } from '../monitoring/bot-monitor';
+
+/**
+ * Executa ciclos de comportamento de um bot individual
+ * Responsável por:
+ * - Fazer posts
+ * - Fazer comentários
+ * - Respeitar limites de frequência
+ * - Gerar conteúdo apropriado
+ */
+class BotEngine {
+  private isRunning: boolean = false;
+  private activeTimers: Map<string, NodeJS.Timeout> = new Map();
+
+  /**
+   * Inicia o motor de um bot específico
+   */
+  startBotCycle(bot: BotUser, config: BotSystemConfig): void {
+    if (this.activeTimers.has(bot.id)) {
+      return; // Já está rodando
+    }
+
+    const scheduleNextAction = async () => {
+      if (!this.isRunning) return;
+
+      const storage = getBotStorage();
+      const behavior = getBehaviorEngine();
+      const monitor = getBotMonitor();
+
+      // Gera seed baseado em tempo e ID
+      const seed = Date.now() + bot.id.charCodeAt(0);
+
+      // Verifica se o bot pode operar
+      const canOperate = behavior.validateBotCanOperate(
+        bot,
+        config.maxPostsPerBotPerDay,
+        config.maxCommentsPerBotPerDay
+      );
+
+      if (!canOperate.canPost && !canOperate.canComment) {
+        // Bot atingiu limite diário, tenta novamente em 1 hora
+        const timer = setTimeout(() => scheduleNextAction().catch(console.error), 60 * 60 * 1000);
+        this.activeTimers.set(bot.id, timer);
+        return;
+      }
+
+      // Decide ação
+      const action = behavior.decideAction(bot, seed);
+
+      if (action === 'post' && canOperate.canPost) {
+        await this.generatePost(bot);
+        monitor.recordPost(bot.id);
+        storage.logActivity(bot.id, 'post');
+      } else if (action === 'comment' && canOperate.canComment) {
+        this.generateComment(bot);
+        monitor.recordComment(bot.id);
+        storage.logActivity(bot.id, 'comment');
+      } else {
+        storage.logActivity(bot.id, 'idle');
+      }
+
+      // Atualiza tempo de atividade
+      storage.updateBotActivity(bot.id);
+
+      // Agenda próxima ação
+      const nextDelay = behavior.getNextActionDelay(
+        bot,
+        action === 'post'
+          ? config.postIntervalSeconds
+          : config.commentIntervalSeconds,
+        seed
+      );
+
+      const timer = setTimeout(() => scheduleNextAction().catch(console.error), nextDelay);
+      this.activeTimers.set(bot.id, timer);
+    };
+
+    // Inicia o ciclo
+    const initialDelay = 2000 + Math.random() * 3000; // Stagger inicial de 2-5s
+    const timer = setTimeout(() => scheduleNextAction().catch(console.error), initialDelay);
+    this.activeTimers.set(bot.id, timer);
+  }
+
+  /**
+   * Para o ciclo de um bot específico
+   */
+  stopBotCycle(botId: string): void {
+    const timer = this.activeTimers.get(botId);
+    if (timer) {
+      clearTimeout(timer);
+      this.activeTimers.delete(botId);
+    }
+  }
+
+  /**
+   * Para todos os ciclos de bots
+   */
+  stopAllCycles(): void {
+    this.activeTimers.forEach(timer => clearTimeout(timer));
+    this.activeTimers.clear();
+  }
+
+  /**
+   * Gera um post para um bot
+   * Em produção, isso seria integrado com Firestore/API
+   */
+  private async generatePost(bot: BotUser): Promise<void> {
+    const seed = Date.now() * Math.random();
+
+    const result = await generatePost(bot.persona, seed);
+    if (!result) {
+      return;
+    }
+
+    // Aqui você integraria com o Firebase/API para salvar o post
+    console.log(`[BOT POST] ${bot.name}: ${result.content}`);
+    if (result.image) {
+      console.log(`  📷 Com imagem: ${result.image.url}`);
+    }
+
+    // Exemplo de como seria em produção:
+    // await savePostToDatabase({
+    //   botId: bot.id,
+    //   content: result.content,
+    //   type: result.type,
+    //   image: result.image,
+    //   timestamp: Date.now(),
+    // });
+  }
+
+  /**
+   * Gera um comentário para um bot
+   * Em produção, isso seria integrado com Firestore/API
+   */
+  private generateComment(bot: BotUser): void {
+    const seed = Date.now() * Math.random();
+
+    const result = generateComment(bot.persona, seed);
+    if (!result) {
+      return;
+    }
+
+    // Aqui você integraria com o Firebase/API para salvar o comentário
+    console.log(`[BOT COMMENT] ${bot.name}: ${result.content}`);
+
+    // Exemplo de como seria em produção:
+    // await saveCommentToDatabase({
+    //   botId: bot.id,
+    //   postId: selectedPost.id,
+    //   content: result.content,
+    //   type: result.type,
+    //   timestamp: Date.now(),
+    // });
+  }
+
+  /**
+   * Inicia todos os ciclos de bots
+   */
+  startAllBots(config: BotSystemConfig): void {
+    this.isRunning = true;
+    const storage = getBotStorage();
+    const allBots = storage.getAllBots();
+
+    allBots.forEach(bot => {
+      this.startBotCycle(bot, config);
+    });
+  }
+
+  /**
+   * Para todos os bots
+   */
+  stopAllBots(): void {
+    this.isRunning = false;
+    this.stopAllCycles();
+  }
+
+  /**
+   * Retorna status dos ciclos
+   */
+  getStatus(): { isRunning: boolean; activeBots: number } {
+    return {
+      isRunning: this.isRunning,
+      activeBots: this.activeTimers.size,
+    };
+  }
+}
+
+// Singleton
+let instance: BotEngine | null = null;
+
+export function getBotEngine(): BotEngine {
+  if (!instance) {
+    instance = new BotEngine();
+  }
+  return instance;
+}
+
+export function resetBotEngine(): void {
+  instance?.stopAllBots();
+  instance = null;
+}

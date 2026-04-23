@@ -7,16 +7,28 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { db } from '@/firebase';
-import { collection, getDocs, limit, query } from 'firebase/firestore';
+import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
 import { useTranslation } from 'react-i18next';
+import { rankTrendingHashtags } from '@/lib/hashtags';
+import { useRequireAuth } from '@/hooks/useRequireAuth';
 
 function ExploreContent() {
   const { t } = useTranslation('common');
+  const { user, isAuthReady } = useRequireAuth();
   const searchParams = useSearchParams();
   const searchQuery = searchParams?.get('q') || '';
   const [activeTab, setActiveTab] = useState<'all' | 'people' | 'posts'>('all');
   const [users, setUsers] = useState<any[]>([]);
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);
+  const [trendingTags, setTrendingTags] = useState<string[]>([]);
+
+  if (!isAuthReady || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (!searchQuery) return;
@@ -30,7 +42,8 @@ function ExploreContent() {
           .filter((user: any) =>
             user.displayName?.toLowerCase().includes(normalizedQuery) ||
             user.email?.toLowerCase().includes(normalizedQuery) ||
-            user.bio?.toLowerCase().includes(normalizedQuery)
+            user.bio?.toLowerCase().includes(normalizedQuery) ||
+            user.username?.toLowerCase().includes(normalizedQuery.replace('@', ''))
           );
         setUsers(matchedUsers);
       } catch (error) {
@@ -40,6 +53,24 @@ function ExploreContent() {
       }
     };
     fetchUsers();
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (searchQuery) return;
+
+    const fetchTrending = async () => {
+      try {
+        const postsSnap = await getDocs(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(200)));
+        const posts = postsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const ranked = rankTrendingHashtags(posts).map((x) => x.tag);
+        setTrendingTags(ranked);
+      } catch (error) {
+        console.error('Error fetching trending hashtags:', error);
+        setTrendingTags([]);
+      }
+    };
+
+    void fetchTrending();
   }, [searchQuery]);
 
   return (
@@ -85,17 +116,23 @@ function ExploreContent() {
               <TrendingUp className="w-5 h-5 text-primary" />
               {t('explore_page.trending', 'Trending Topics')}
             </div>
-            <div className="flex flex-wrap gap-2">
-              {['#ArtificialIntelligence', '#DesignSystems', '#FutureOfWork', '#AuraNetwork', '#CreativeCoding', '#SustainableTech'].map(tag => (
-                <Link
-                  key={tag}
-                  href={`/explore?q=${encodeURIComponent(tag)}`}
-                  className="px-4 py-2 bg-muted/50 hover:bg-primary/10 hover:text-primary rounded-full text-sm font-medium transition-all border border-transparent hover:border-primary/20"
-                >
-                  {tag}
-                </Link>
-              ))}
-            </div>
+            {trendingTags.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {trendingTags.map((tag) => (
+                  <Link
+                    key={tag}
+                    href={`/explore?q=${encodeURIComponent(tag)}`}
+                    className="px-4 py-2 bg-muted/50 hover:bg-primary/10 hover:text-primary rounded-full text-sm font-medium transition-all border border-transparent hover:border-primary/20"
+                  >
+                    {tag}
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <div className="text-muted-foreground text-sm">
+                {t('explore_page.no_trending_yet', 'Ainda não há tópicos em alta.')}
+              </div>
+            )}
           </div>
         )}
 
@@ -126,6 +163,7 @@ function ExploreContent() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h4 className="font-bold text-foreground truncate">{user.displayName}</h4>
+                      {user.username && <p className="text-[12px] text-primary font-bold mt-[-2px]">@{user.username}</p>}
                       <p className="text-[13px] text-muted-foreground truncate">{user.bio || t('explore_page.member', 'Aura Member')}</p>
                     </div>
                   </Link>

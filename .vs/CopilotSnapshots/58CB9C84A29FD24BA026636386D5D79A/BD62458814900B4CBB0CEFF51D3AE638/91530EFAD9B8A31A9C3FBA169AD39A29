@@ -1,0 +1,130 @@
+﻿'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useTranslation } from 'react-i18next';
+import { useAppStore } from '@/lib/store';
+import { AppLayout } from '@/components/AppLayout';
+import { ChatConversation } from './ChatConversation';
+import { ChatList } from './ChatList';
+import { useChat } from './ChatProvider';
+import { uploadImage } from '@/lib/image-utils';
+
+export function ChatWorkspace() {
+  const { t } = useTranslation('common');
+  const profile = useAppStore((state) => state.profile);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialChatId = searchParams?.get('chatId') || null;
+
+  const {
+    chats,
+    suggestions,
+    messagesByChat,
+    typingByChat,
+    loading,
+    pageChatId,
+    setPageChatId,
+    openChatWithUser,
+    sendMessage,
+    sendTyping,
+    loadMessages,
+  } = useChat();
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [composerValue, setComposerValue] = useState('');
+
+  useEffect(() => {
+    if (initialChatId && initialChatId !== pageChatId) {
+      setPageChatId(initialChatId);
+      loadMessages(initialChatId);
+    }
+  }, [initialChatId, pageChatId, loadMessages, setPageChatId]);
+
+  useEffect(() => {
+    if (!pageChatId) return;
+    setComposerValue('');
+  }, [pageChatId]);
+
+  const filteredChats = useMemo(() => {
+    if (!searchQuery.trim()) return chats;
+    return chats.filter((chat) =>
+      chat.otherUser.displayName.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [chats, searchQuery]);
+
+  const filteredSuggestions = useMemo(() => {
+    if (!searchQuery.trim()) return suggestions;
+    return suggestions.filter((user) =>
+      user.displayName.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [searchQuery, suggestions]);
+
+  const activeChat = chats.find((chat) => chat.id === pageChatId) || null;
+
+  return (
+    <AppLayout wide hideSidebar hideRightPanel>
+      <div className="flex h-[calc(100vh-64px)] overflow-hidden bg-[#f8fafc]">
+        <div className={`w-full border-r border-slate-100 md:w-[380px] lg:w-[420px] ${pageChatId ? 'hidden md:block' : 'block'}`}>
+          <ChatList
+            chats={filteredChats}
+            suggestions={filteredSuggestions}
+            loading={loading}
+            activeChatId={pageChatId}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            onCompose={() => {
+              setSearchQuery('');
+              setPageChatId(null);
+              router.replace('/messages');
+            }}
+            onSelectChat={(chatId) => {
+              setPageChatId(chatId);
+              router.replace(`/messages?chatId=${chatId}`);
+            }}
+            onStartChat={async (user) => {
+              const chatId = await openChatWithUser(user, 'page');
+              if (chatId) router.replace(`/messages?chatId=${chatId}`);
+            }}
+            title={t('messages_page.title', 'Mensagens')}
+          />
+        </div>
+
+        <div className={`flex-1 ${!pageChatId ? 'hidden md:block' : 'block'}`}>
+          <ChatConversation
+            chat={activeChat}
+            messages={pageChatId ? messagesByChat[pageChatId] || [] : []}
+            currentUserId={profile.uid}
+            isTyping={pageChatId ? Boolean(typingByChat[pageChatId]) : false}
+            value={composerValue}
+            onChange={(value) => {
+              setComposerValue(value);
+              if (pageChatId) sendTyping(pageChatId, value.length > 0);
+            }}
+            onBack={() => {
+              setPageChatId(null);
+              router.replace('/messages');
+            }}
+            onSend={async () => {
+              if (!pageChatId) return;
+              const value = composerValue.trim();
+              if (!value) return;
+              await sendMessage(pageChatId, value);
+              setComposerValue('');
+            }}
+            onUpload={async (file) => {
+              if (!pageChatId) return;
+              try {
+                const result = await uploadImage(file);
+                await sendMessage(pageChatId, t('messages_page.image_label', 'Imagem'), 'image', result.url);
+              } catch (error: any) {
+                console.error('Chat upload error:', error);
+                alert(`Failed to upload image: ${error.message}`);
+              }
+            }}
+          />
+        </div>
+      </div>
+    </AppLayout>
+  );
+}

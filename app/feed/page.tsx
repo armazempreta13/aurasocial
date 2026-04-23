@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAppStore } from '@/lib/store';
 import { AppLayout } from '@/components/AppLayout';
-import { Onboarding } from '@/components/Onboarding';
+import { OnboardingFlow } from '@/components/OnboardingFlow';
 
 function AuthTransitionScreen() {
   return (
@@ -22,7 +22,7 @@ export default function FeedPage() {
 
   useEffect(() => {
     if (isAuthReady && !user) {
-      router.replace('/');
+      router.replace('/?auth=login');
     }
   }, [isAuthReady, router, user]);
 
@@ -31,7 +31,7 @@ export default function FeedPage() {
   }
 
   if (profile && profile.onboardingCompleted === false) {
-    return <Onboarding />;
+    return <OnboardingFlow />;
   }
 
   return <AppLayout />;

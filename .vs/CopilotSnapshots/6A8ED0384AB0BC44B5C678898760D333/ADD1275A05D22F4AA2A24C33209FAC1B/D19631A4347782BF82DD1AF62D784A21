@@ -1,0 +1,72 @@
+﻿import { BotPersona } from './bot.types';
+
+// Nomes realistas brasileiros para os bots
+const FIRST_NAMES = [
+  'Lucas', 'Marina', 'Felipe', 'Sofia', 'Carlos', 'Ana', 'Rafael', 'Julia',
+  'Bruno', 'Isabela', 'Diego', 'Beatriz', 'João', 'Carolina', 'Pedro', 'Fernanda',
+  'André', 'Gabriela', 'Rodrigo', 'Camila', 'Gustavo', 'Paula', 'Mateus', 'Leticia',
+  'Ricardo', 'Vanessa', 'Marcelo', 'Alessandra', 'Gabriel', 'Monica', 'Alexandre', 'Priscila',
+];
+
+const LAST_NAMES = [
+  'Silva', 'Santos', 'Oliveira', 'Souza', 'Costa', 'Ferreira', 'Rodrigues', 'Martins',
+  'Gomes', 'Alves', 'Pereira', 'Carvalho', 'Ribeiro', 'Mendes', 'Dias', 'Monteiro',
+  'Andrade', 'Rocha', 'Campos', 'Tavares', 'Barbosa', 'Cavalcanti', 'Araujo', 'Machado',
+];
+
+// Cores para avatar seed (vai ser usada para gerar avatares)
+const AVATAR_COLORS = [
+  'FF6B6B', '4ECDC4', '45B7D1', 'FFA07A', '98D8C8',
+  'F7DC6F', 'BB8FCE', '85C1E2', 'F8B88B', 'A8E6CF',
+];
+
+/**
+ * Gera um nome realista para um bot baseado em seed
+ */
+export function generateBotName(seed: number): string {
+  const firstNameIndex = seed % FIRST_NAMES.length;
+  const lastNameIndex = (seed * 7) % LAST_NAMES.length;
+  
+  return `${FIRST_NAMES[firstNameIndex]} ${LAST_NAMES[lastNameIndex]}`;
+}
+
+/**
+ * Gera um avatar com base em seed
+ * Retorna URL para um gerador de avatar (ex: ui-avatars.com)
+ */
+export function generateBotAvatar(botId: string, name: string): string {
+  // Cria um hash do botId
+  let hash = 0;
+  for (let i = 0; i < botId.length; i++) {
+    const char = botId.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+
+  const colorIndex = Math.abs(hash) % AVATAR_COLORS.length;
+  const bgColor = AVATAR_COLORS[colorIndex];
+  
+  // Usa initiais e cor consistente baseada no ID
+  const initials = name
+    .split(' ')
+    .map(n => n[0])
+    .join('')
+    .toUpperCase();
+
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(initials)}&background=${bgColor}&color=fff&size=200`;
+}
+
+/**
+ * Gera uma persona aleatória baseada em seed
+ */
+export function generateBotPersona(seed: number): BotPersona {
+  const personas: BotPersona[] = ['casual', 'opinativo', 'observador', 'engajador'];
+  return personas[seed % personas.length];
+}
+
+/**
+ * Gera um ID único para bot
+ */
+export function generateBotId(index: number): string {
+  return `bot_${index}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}

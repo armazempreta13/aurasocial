@@ -41,7 +41,7 @@ export default function FeedbackPage() {
 
   if (submitted) {
     return (
-      <AppLayout>
+      <AppLayout wide={true} hideRightPanel={true}>
         <div className="min-h-[60vh] flex flex-col items-center justify-center text-center px-4">
           <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center text-green-600 mb-6">
             <ThumbsUp className="w-10 h-10" />
@@ -62,19 +62,35 @@ export default function FeedbackPage() {
   }
 
   return (
-    <AppLayout>
+    <AppLayout wide={true} hideRightPanel={true}>
       <div className="mb-6">
-        <div className="flex flex-col items-center text-center mb-12">
-          <div className="w-16 h-16 bg-primary/10 rounded-3xl flex items-center justify-center text-primary mb-6">
-            <MessageSquareWarning className="w-8 h-8" />
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] items-start mb-10">
+          <div className="max-w-2xl">
+            <div className="w-16 h-16 bg-primary/10 rounded-3xl flex items-center justify-center text-primary mb-6">
+              <MessageSquareWarning className="w-8 h-8" />
+            </div>
+            <h1 className="text-3xl font-extrabold text-foreground mb-4 tracking-tight">Dar feedback</h1>
+            <p className="text-muted-foreground text-lg leading-8">
+              Use este espaco para reportar bugs, apontar friccao de UX e pedir melhorias com contexto claro.
+            </p>
           </div>
-          <h1 className="text-3xl font-extrabold text-foreground mb-4 tracking-tight">Give Feedback</h1>
-          <p className="text-muted-foreground text-lg max-w-xl">
-            How are we doing? Let us know what you love or what we can improve.
-          </p>
+          <div className="bg-white rounded-3xl border border-border/50 shadow-sm p-6">
+            <h2 className="text-lg font-bold text-foreground">Antes de enviar</h2>
+            <div className="mt-4 space-y-3 text-sm text-muted-foreground leading-6">
+              <div className="rounded-2xl bg-muted/30 px-4 py-3">
+                Descreva o problema com o maior contexto possivel.
+              </div>
+              <div className="rounded-2xl bg-muted/30 px-4 py-3">
+                Se for UX, diga onde a interface ficou confusa.
+              </div>
+              <div className="rounded-2xl bg-muted/30 px-4 py-3">
+                Se for bug, diga o que voce fez e o que esperava ver.
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="max-w-2xl mx-auto bg-white rounded-3xl border border-border/50 shadow-sm p-8">
+        <div className="max-w-4xl bg-white rounded-3xl border border-border/50 shadow-sm p-8">
           <form onSubmit={handleSubmit} className="space-y-8">
             {/* Rating */}
             <div className="text-center">
@@ -96,7 +112,9 @@ export default function FeedbackPage() {
             </div>
 
             {/* Category */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-sm font-bold text-muted-foreground uppercase tracking-wider mb-4">Categoria</label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {['Bug Report', 'Feature Request', 'Design', 'Performance', 'Other'].map((cat) => (
                 <button
                   key={cat}
@@ -111,6 +129,7 @@ export default function FeedbackPage() {
                   {cat}
                 </button>
               ))}
+              </div>
             </div>
 
             {/* Content */}

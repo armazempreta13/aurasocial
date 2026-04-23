@@ -29,16 +29,38 @@ export function useCall() {
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   
   const pcRef = useRef<RTCPeerConnection | null>(null);
+  const cleanupRef = useRef<(() => void) | null>(null);
+
+  // Cleanup function definition
+  const cleanup = useCallback(() => {
+    localStream?.getTracks().forEach(t => t.stop());
+    setLocalStream(null);
+    setRemoteStream(null);
+    pcRef.current?.close();
+    pcRef.current = null;
+    setCallState('idle');
+    setSession(null);
+  }, [localStream]);
+
+  useEffect(() => {
+    cleanupRef.current = cleanup;
+  }, [cleanup]);
+
+  // 1. SIGNAL PROCESSOR (Centralized via SignalingProvider)
+  const callStateRef = useRef(callState);
+  useEffect(() => { callStateRef.current = callState; }, [callState]);
 
   // 1. SIGNAL PROCESSOR (Centralized via SignalingProvider)
   useEffect(() => {
-    if (!events || !profile?.uid) return;
-    const { type, fromId, payload } = events;
+    if (!profile?.uid) return;
 
-    const processSignal = async () => {
+    const onSignal = async (e: Event) => {
+        const signal = (e as CustomEvent).detail;
+        const { type, fromId, payload } = signal;
+
         switch (type) {
             case 'request':
-              if (callState === 'idle') {
+              if (callStateRef.current === 'idle') {
                 setSession({ userId: fromId, ...payload, isCaller: false });
                 setCallState('receiving');
               } else {
@@ -47,17 +69,17 @@ export function useCall() {
               break;
             case 'busy':
               setCallState('busy');
-              setTimeout(cleanup, 3000);
+              setTimeout(() => cleanupRef.current?.(), 3000);
               break;
             case 'rejected':
-              cleanup();
+              cleanupRef.current?.();
               break;
             case 'accepted':
               setCallState('active');
               await startWebRTC(true, fromId);
               break;
             case 'ended':
-              cleanup();
+              cleanupRef.current?.();
               break;
             case 'webrtc-offer':
               await handleOffer(payload, fromId);
@@ -71,8 +93,9 @@ export function useCall() {
           }
     };
 
-    processSignal();
-  }, [events, profile?.uid, callState, sendSignal]);
+    window.addEventListener('aura:signal', onSignal);
+    return () => window.removeEventListener('aura:signal', onSignal);
+  }, [profile?.uid, sendSignal]);
 
   // 2. WebRTC Logic (Internal)
   const startWebRTC = async (isCaller: boolean, targetId: string) => {
@@ -122,16 +145,6 @@ export function useCall() {
     if (pcRef.current) await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => {});
   };
 
-  const cleanup = useCallback(() => {
-    localStream?.getTracks().forEach(t => t.stop());
-    setLocalStream(null);
-    setRemoteStream(null);
-    pcRef.current?.close();
-    pcRef.current = null;
-    setCallState('idle');
-    setSession(null);
-  }, [localStream]);
-
   // 3. EXPORTED ACTIONS
   const initiateCall = (toId: string, toName: string, toPhoto: string, type: 'audio' | 'video') => {
     setSession({ userId: toId, name: toName, photo: toPhoto, type, isCaller: true });
@@ -149,13 +162,13 @@ export function useCall() {
   const declineCall = () => {
     if (!session) return;
     sendSignal(session.userId, 'rejected', {});
-    cleanup();
+    cleanupRef.current?.();
   };
 
   const endCall = () => {
     if (!session) return;
     sendSignal(session.userId, 'ended', {});
-    cleanup();
+    cleanupRef.current?.();
   };
 
   // Listen for Global UI Trigger (Optional)

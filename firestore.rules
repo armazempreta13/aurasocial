@@ -3,16 +3,30 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ===============================================================
-    // Helper Functions
+    // Helper Functions — Auth
     // ===============================================================
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == "philippeboechat1@gmail.com" ||
+        request.auth.uid == "Xg1kUDYzAvQ91rChJE1NhXxSV5I3"
+      );
     }
 
+    function isOwner(userId) {
+      return isAuthenticated() && (request.auth.uid == userId || isAdmin());
+    }
+
+    function currentUid() {
+      return request.auth.uid;
+    }
+
+    // ===============================================================
+    // Helper Functions — Field Guards
+    // ===============================================================
     function uidUnchanged(field) {
       return !(field in request.resource.data) || request.resource.data[field] == request.auth.uid;
     }
@@ -21,6 +35,13 @@ service cloud.firestore {
       return !(field in request.resource.data) || request.resource.data[field] == resource.data[field];
     }
 
+    function affectedOnly(keys) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    // ===============================================================
+    // Helper Functions — Validation
+    // ===============================================================
     function hasRequiredFields(fields) {
       return request.resource.data.keys().hasAll(fields);
     }
@@ -46,50 +67,59 @@ service cloud.firestore {
     function isValidOptionalPositive(field) {
       return !(field in request.resource.data) ||
              request.resource.data[field] == null ||
-             (request.resource.data[field] is number && request.resource.data[field] >= 0);
+             request.resource.data[field] is number;
     }
 
-    function isValidList(listField, maxSize) {
-      return request.resource.data[listField] is list && request.resource.data[listField].size() <= maxSize;
+    function isValidOptionalBool(field) {
+      return !(field in request.resource.data) ||
+             request.resource.data[field] == null ||
+             request.resource.data[field] is bool;
     }
 
     function isValidOptionalList(listField, maxSize) {
       return !(listField in request.resource.data) ||
              request.resource.data[listField] == null ||
-             (request.resource.data[listField] is list && request.resource.data[listField].size() <= maxSize);
+             (request.resource.data[listField] is list &&
+              request.resource.data[listField].size() <= maxSize);
+    }
+
+    function isValidOptionalMap(field) {
+      return !(field in request.resource.data) ||
+             request.resource.data[field] == null ||
+             request.resource.data[field] is map;
+    }
+
+    function isValidTimestamp(field) {
+      return request.resource.data[field] is timestamp;
+    }
+
+    function isValidOptionalTimestamp(field) {
+      return !(field in request.resource.data) ||
+             request.resource.data[field] == null ||
+             request.resource.data[field] is timestamp;
     }
 
     function isValidReactionCounts() {
-      return !('reactionCounts' in request.resource.data) ||
-             (request.resource.data.reactionCounts is map &&
-              request.resource.data.reactionCounts.keys().hasOnly(['like', 'love', 'insightful', 'funny']));
+      return isValidOptionalMap('reactionCounts');
     }
 
     function isValidPrivacySettings() {
       return !('privacySettings' in request.resource.data) ||
              (request.resource.data.privacySettings is map &&
-              request.resource.data.privacySettings.keys().hasOnly(['publicProfile', 'directMessages', 'activityStatus']));
+              request.resource.data.privacySettings.keys().hasOnly([
+                'publicProfile', 'directMessages', 'activityStatus',
+                'showEmail', 'showBirthdate', 'showFriends', 'showFollowers'
+              ]));
     }
 
-    function isValidRelationshipSettings() {
-      return request.resource.data.keys().hasAll([
-        'whoCanSendFriendRequest',
-        'whoCanSeeFriendList',
-        'whoCanMessageMe',
-        'whoCanInviteMeToCommunities',
-        'whoCanSeeFriendsOnlyPosts',
-        'allowFriendRequestMessage',
-        'showMutualFriends',
-        'updatedAt'
-      ]) &&
-      request.resource.data.whoCanSendFriendRequest in ['everyone', 'friends_of_friends', 'same_communities', 'nobody'] &&
-      request.resource.data.whoCanSeeFriendList in ['everyone', 'friends', 'only_me'] &&
-      request.resource.data.whoCanMessageMe in ['everyone', 'friends', 'friends_and_interest_contacts', 'nobody'] &&
-      request.resource.data.whoCanInviteMeToCommunities in ['everyone', 'friends', 'close_friends', 'nobody'] &&
-      request.resource.data.whoCanSeeFriendsOnlyPosts in ['friends', 'close_friends'] &&
-      request.resource.data.allowFriendRequestMessage is bool &&
-      request.resource.data.showMutualFriends is bool &&
-      request.resource.data.updatedAt is timestamp;
+    function isValidNotificationPreferences() {
+      return !('notificationPreferences' in request.resource.data) ||
+             (request.resource.data.notificationPreferences is map &&
+              request.resource.data.notificationPreferences.keys().hasOnly([
+                'likes', 'comments', 'follows', 'friendRequests',
+                'messages', 'communityPosts', 'mentions', 'replies',
+                'emailNotifications', 'pushNotifications'
+              ]));
     }
 
     // ===============================================================
@@ -99,20 +129,24 @@ service cloud.firestore {
     function isValidUser() {
       return hasRequiredFields(['uid', 'email', 'displayName', 'createdAt']) &&
              isValidString('uid', 1, 128) &&
-             isValidString('email', 5, 256) && isValidEmail(request.resource.data.email) &&
+             isValidString('email', 5, 256) &&
+             isValidEmail(request.resource.data.email) &&
              isValidString('displayName', 1, 100) &&
+             isValidOptionalString('username', 3, 30) &&
              isValidOptionalString('photoURL', 0, 1000) &&
              isValidOptionalString('coverURL', 0, 1000) &&
              isValidOptionalString('bio', 0, 500) &&
              isValidOptionalString('location', 0, 100) &&
+             isValidOptionalString('website', 0, 200) &&
              isValidOptionalString('education', 0, 100) &&
              isValidOptionalString('work', 0, 100) &&
              isValidOptionalString('relationship', 0, 50) &&
+             isValidOptionalString('birthdate', 0, 20) &&
              isValidOptionalList('interests', 50) &&
-             isValidOptionalPositive('followersCount') &&
-             isValidOptionalPositive('followingCount') &&
+             isValidOptionalList('pinnedPostIds', 5) &&
              isValidPrivacySettings() &&
-             request.resource.data.createdAt is timestamp;
+             isValidNotificationPreferences() &&
+             isValidTimestamp('createdAt');
     }
 
     function isValidPost() {
@@ -120,6 +154,7 @@ service cloud.firestore {
              isValidString('authorId', 1, 128) &&
              isValidString('authorName', 1, 100) &&
              isValidOptionalString('authorPhoto', 0, 1000) &&
+             isValidOptionalString('authorUsername', 0, 100) &&
              isValidString('content', 1, 5000) &&
              isValidOptionalString('imageUrl', 0, 1000) &&
              isValidOptionalString('imageDisplayUrl', 0, 1000) &&
@@ -128,19 +163,63 @@ service cloud.firestore {
              isValidOptionalPositive('imageHeight') &&
              isValidOptionalString('imageMime', 0, 100) &&
              isValidOptionalPositive('imageSize') &&
-             (!('hasImage' in request.resource.data) || request.resource.data.hasImage == null || request.resource.data.hasImage is bool) &&
+             isValidOptionalBool('hasImage') &&
+             isValidOptionalBool('hasVideo') &&
+             isValidOptionalBool('hasAudio') &&
              isValidOptionalString('videoUrl', 0, 1000) &&
+             isValidOptionalString('audioUrl', 0, 1000) &&
+             isValidOptionalString('gifUrl', 0, 1000) &&
              isValidOptionalList('hashtags', 30) &&
-             request.resource.data.visibility in ['public', 'friends', 'interests'] &&
-             isValidOptionalList('targetInterests', 30) &&
+             isValidOptionalList('mentions', 50) &&
+             isValidOptionalList('mediaUrls', 10) &&
+             request.resource.data.visibility in ['public', 'friends', 'interests', 'only_me'] &&
              isValidOptionalPositive('likesCount') &&
              isValidReactionCounts() &&
              isValidOptionalPositive('commentsCount') &&
              isValidOptionalPositive('sharesCount') &&
+             isValidOptionalPositive('viewsCount') &&
+             isValidOptionalPositive('savesCount') &&
              isValidOptionalString('communityId', 0, 128) &&
              isValidOptionalString('communityName', 0, 100) &&
-             request.resource.data.createdAt is timestamp &&
-             (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt == null || request.resource.data.updatedAt is timestamp);
+             isValidOptionalString('mood', 0, 50) &&
+             isValidOptionalString('feeling', 0, 100) &&
+             isValidOptionalString('location', 0, 200) &&
+             isValidOptionalMap('moderation') &&
+             isValidOptionalMap('poll') &&
+             isValidOptionalMap('event') &&
+             isValidOptionalMap('linkPreview') &&
+             isValidOptionalBool('isPinned') &&
+             isValidOptionalBool('isEdited') &&
+             isValidOptionalBool('isSponsored') &&
+             isValidOptionalString('originalPostId', 0, 128) &&
+             isValidOptionalString('sharedFromId', 0, 128) &&
+             isValidOptionalTimestamp('updatedAt') &&
+             isValidOptionalTimestamp('scheduledAt') &&
+             isValidTimestamp('createdAt');
+    }
+
+    function isValidStory() {
+      return hasRequiredFields(['authorId', 'authorName', 'type', 'createdAt', 'expiresAt']) &&
+             isValidString('authorId', 1, 128) &&
+             isValidString('authorName', 1, 100) &&
+             isValidOptionalString('authorPhoto', 0, 1000) &&
+             request.resource.data.type in ['image', 'video', 'text', 'boomerang'] &&
+             isValidOptionalString('mediaUrl', 0, 1000) &&
+             isValidOptionalString('thumbnailUrl', 0, 1000) &&
+             isValidOptionalString('text', 0, 500) &&
+             isValidOptionalString('backgroundColor', 0, 30) &&
+             isValidOptionalString('textColor', 0, 30) &&
+             isValidOptionalString('fontFamily', 0, 50) &&
+             isValidOptionalMap('sticker') &&
+             isValidOptionalMap('poll') &&
+             isValidOptionalMap('question') &&
+             isValidOptionalString('location', 0, 200) &&
+             isValidOptionalList('views', 5000) &&
+             isValidOptionalList('reactions', 5000) &&
+             isValidOptionalPositive('viewsCount') &&
+             request.resource.data.visibility in ['public', 'friends', 'close_friends'] &&
+             isValidTimestamp('expiresAt') &&
+             isValidTimestamp('createdAt');
     }
 
     function isValidComment() {
@@ -149,297 +228,924 @@ service cloud.firestore {
              isValidString('authorId', 1, 128) &&
              isValidString('authorName', 1, 100) &&
              isValidOptionalString('authorPhoto', 0, 1000) &&
+             isValidOptionalString('authorUsername', 0, 100) &&
              isValidString('content', 1, 2000) &&
-             isValidOptionalString('replyToId', 0, 128) &&
-             isValidOptionalString('replyToName', 0, 100) &&
+             isValidOptionalString('parentCommentId', 1, 128) &&
+             isValidOptionalList('mentions', 20) &&
+             isValidOptionalString('imageUrl', 0, 1000) &&
+             isValidOptionalString('gifUrl', 0, 1000) &&
              isValidOptionalPositive('likesCount') &&
+             isValidOptionalPositive('repliesCount') &&
              isValidReactionCounts() &&
-             request.resource.data.createdAt is timestamp;
+             isValidOptionalBool('isEdited') &&
+             isValidOptionalBool('isPinned') &&
+             isValidOptionalTimestamp('updatedAt') &&
+             isValidTimestamp('createdAt');
     }
 
     function isValidLike() {
-      return hasRequiredFields(['postId', 'userId', 'type', 'createdAt']) &&
-             isValidString('postId', 1, 128) &&
-             isValidOptionalString('commentId', 1, 128) &&
+      return hasRequiredFields(['userId', 'type', 'createdAt']) &&
              isValidString('userId', 1, 128) &&
-             request.resource.data.type in ['like', 'love', 'insightful', 'funny'] &&
-             request.resource.data.createdAt is timestamp;
+             isValidOptionalString('postId', 1, 128) &&
+             isValidOptionalString('commentId', 1, 128) &&
+             isValidOptionalString('storyId', 1, 128) &&
+             request.resource.data.type in ['like', 'love', 'funny', 'wow', 'sad', 'angry', 'fire', 'clap', 'support'] &&
+             isValidTimestamp('createdAt');
     }
 
     function isValidFollow() {
       return hasRequiredFields(['followerId', 'followingId', 'createdAt']) &&
              isValidString('followerId', 1, 128) &&
              isValidString('followingId', 1, 128) &&
-             request.resource.data.createdAt is timestamp;
+             isValidOptionalString('status', 0, 20) &&
+             isValidTimestamp('createdAt');
     }
 
     function isValidNotification() {
       return hasRequiredFields(['userId', 'actorId', 'type', 'read', 'createdAt']) &&
              isValidString('userId', 1, 128) &&
              isValidString('actorId', 1, 128) &&
-             isValidOptionalString('actorName', 0, 100) &&
-             isValidOptionalString('actorPhoto', 0, 1000) &&
-             request.resource.data.type in ['like', 'comment', 'follow', 'friend_request', 'friend_accept', 'share'] &&
-             isValidOptionalString('postId', 0, 128) &&
+             request.resource.data.type in [
+               'like', 'comment', 'follow', 'friend_request', 'friend_accept',
+               'share', 'mention', 'reply', 'community_invite', 'community_post',
+               'community_accept', 'story_reaction', 'story_reply',
+               'post_tag', 'birthday', 'live_start', 'poll_vote',
+               'event_reminder', 'event_invite', 'system'
+             ] &&
              request.resource.data.read is bool &&
-             request.resource.data.createdAt is timestamp;
-    }
-
-    function isValidFriendRequest() {
-      return hasRequiredFields(['fromUid', 'toUid', 'status', 'createdAt']) &&
-             isValidString('fromUid', 1, 128) &&
-             isValidString('toUid', 1, 128) &&
-             request.resource.data.status in ['pending', 'accepted', 'declined', 'ignored', 'cancelled', 'blocked', 'expired'] &&
-             isValidOptionalString('message', 0, 240) &&
-             request.resource.data.createdAt is timestamp &&
-             (!('respondedAt' in request.resource.data) || request.resource.data.respondedAt == null || request.resource.data.respondedAt is timestamp);
-    }
-
-    function isValidFriendship() {
-      return hasRequiredFields(['pairId', 'users', 'status', 'updatedAt']) &&
-             isValidString('pairId', 1, 256) &&
-             request.resource.data.users is list &&
-             request.resource.data.users.size() == 2 &&
-             request.auth.uid in request.resource.data.users &&
-             request.resource.data.status in ['active', 'removed'] &&
-             (!('mutedBy' in request.resource.data) || request.resource.data.mutedBy is list) &&
-             request.resource.data.updatedAt is timestamp &&
-             (!('createdAt' in request.resource.data) || request.resource.data.createdAt == null || request.resource.data.createdAt is timestamp) &&
-             (!('removedAt' in request.resource.data) || request.resource.data.removedAt == null || request.resource.data.removedAt is timestamp);
-    }
-
-    function isValidBlock() {
-      return hasRequiredFields(['fromUid', 'toUid', 'createdAt']) &&
-             isValidString('fromUid', 1, 128) &&
-             isValidString('toUid', 1, 128) &&
-             request.resource.data.createdAt is timestamp;
-    }
-
-    function isValidRestriction() {
-      return hasRequiredFields(['fromUid', 'toUid', 'active', 'updatedAt', 'createdAt']) &&
-             isValidString('fromUid', 1, 128) &&
-             isValidString('toUid', 1, 128) &&
-             request.resource.data.active is bool &&
-             request.resource.data.updatedAt is timestamp &&
-             request.resource.data.createdAt is timestamp;
-    }
-
-    function isValidAffinityScore() {
-      return hasRequiredFields(['viewerUid', 'targetUid', 'score', 'updatedAt']) &&
-             isValidString('viewerUid', 1, 128) &&
-             isValidString('targetUid', 1, 128) &&
-             request.resource.data.score is number &&
-             request.resource.data.updatedAt is timestamp;
-    }
-
-    function isValidChat() {
-      return hasRequiredFields(['participants', 'createdAt', 'updatedAt']) &&
-             request.resource.data.participants is list &&
-             request.resource.data.participants.size() == 2 &&
-             request.auth.uid in request.resource.data.participants &&
-             isValidOptionalString('lastMessage', 0, 2000) &&
-             (!('lastMessageTime' in request.resource.data) || request.resource.data.lastMessageTime is timestamp) &&
-             (!('lastSenderId' in request.resource.data) || request.resource.data.lastSenderId is string) &&
-             (!('unreadCount' in request.resource.data) || request.resource.data.unreadCount is map) &&
-             request.resource.data.createdAt is timestamp &&
-             request.resource.data.updatedAt is timestamp;
-    }
-
-    function isValidMessage() {
-      return hasRequiredFields(['chatId', 'senderId', 'createdAt']) &&
-             isValidString('chatId', 1, 128) &&
-             isValidString('senderId', 1, 128) &&
-             request.resource.data.senderId == request.auth.uid &&
-             (!('text' in request.resource.data) || (request.resource.data.text is string && request.resource.data.text.size() <= 4000)) &&
-             (!('image' in request.resource.data) || request.resource.data.image == null || request.resource.data.image is string) &&
-             (!('status' in request.resource.data) || request.resource.data.status in ['sending', 'sent', 'delivered', 'read']) &&
-             (!('reactions' in request.resource.data) || request.resource.data.reactions is map) &&
-             request.resource.data.createdAt is timestamp;
+             isValidOptionalString('postId', 0, 128) &&
+             isValidOptionalString('commentId', 0, 128) &&
+             isValidOptionalString('communityId', 0, 128) &&
+             isValidOptionalString('storyId', 0, 128) &&
+             isValidOptionalString('eventId', 0, 128) &&
+             isValidOptionalMap('metadata') &&
+             isValidTimestamp('createdAt');
     }
 
     function isValidCommunity() {
-      return hasRequiredFields(['name', 'description', 'type', 'creatorId', 'members', 'memberCount', 'createdAt']) &&
+      return hasRequiredFields(['name', 'description', 'type', 'creatorId', 'memberCount', 'createdAt', 'updatedAt']) &&
              isValidString('name', 1, 100) &&
              isValidString('description', 1, 1000) &&
-             request.resource.data.type in ['Public', 'Private'] &&
+             request.resource.data.type in ['Public', 'Private', 'Secret'] &&
              isValidString('creatorId', 1, 128) &&
-             request.resource.data.members is list &&
+             isValidOptionalString('coverURL', 0, 1000) &&
+             isValidOptionalString('avatarURL', 0, 1000) &&
+             isValidOptionalString('category', 0, 50) &&
+             isValidOptionalList('tags', 20) &&
+             isValidOptionalList('rules', 20) &&
+             isValidOptionalList('admins', 200) &&
+             isValidOptionalList('moderators', 200) &&
              isValidOptionalPositive('memberCount') &&
-             request.resource.data.createdAt is timestamp;
-    }
-
-    function isValidFeedback() {
-      return hasRequiredFields(['userId', 'userName', 'rating', 'category', 'content', 'createdAt']) &&
-             isValidString('userId', 1, 128) &&
-             isValidString('userName', 1, 100) &&
-             request.resource.data.rating is number && request.resource.data.rating >= 1 && request.resource.data.rating <= 5 &&
-             request.resource.data.category in ['Bug Report', 'Feature Request', 'Design', 'Performance', 'Other'] &&
-             isValidString('content', 1, 5000) &&
-             request.resource.data.createdAt is timestamp;
+             isValidOptionalPositive('postCount') &&
+             isValidOptionalBool('isVerified') &&
+             isValidTimestamp('createdAt') &&
+             isValidTimestamp('updatedAt');
     }
 
     function isValidBookmark() {
       return hasRequiredFields(['userId', 'postId', 'createdAt']) &&
              isValidString('userId', 1, 128) &&
              isValidString('postId', 1, 128) &&
-             request.resource.data.createdAt is timestamp;
+             isValidOptionalString('collectionId', 0, 128) &&
+             isValidOptionalString('note', 0, 500) &&
+             isValidTimestamp('createdAt');
+    }
+
+    function isValidBookmarkCollection() {
+      return hasRequiredFields(['userId', 'name', 'createdAt']) &&
+             isValidString('userId', 1, 128) &&
+             isValidString('name', 1, 100) &&
+             isValidOptionalString('description', 0, 300) &&
+             isValidOptionalString('coverURL', 0, 1000) &&
+             isValidOptionalBool('isPrivate') &&
+             isValidOptionalPositive('itemCount') &&
+             isValidTimestamp('createdAt');
+    }
+
+    function isValidMessage() {
+      return hasRequiredFields(['senderId', 'type', 'createdAt']) &&
+             isValidString('senderId', 1, 128) &&
+             request.resource.data.type in ['text', 'image', 'video', 'audio', 'file', 'gif', 'sticker', 'post_share', 'story_reply', 'location', 'contact', 'deleted'] &&
+             isValidOptionalString('content', 0, 10000) &&
+             isValidOptionalString('mediaUrl', 0, 1000) &&
+             isValidOptionalString('thumbnailUrl', 0, 1000) &&
+             isValidOptionalString('fileName', 0, 255) &&
+             isValidOptionalPositive('fileSize') &&
+             isValidOptionalString('mimeType', 0, 100) &&
+             isValidOptionalString('replyToMessageId', 0, 128) &&
+             isValidOptionalString('sharedPostId', 0, 128) &&
+             isValidOptionalString('sharedStoryId', 0, 128) &&
+             isValidOptionalList('readBy', 1000) &&
+             isValidOptionalList('reactions', 1000) &&
+             isValidOptionalBool('isEdited') &&
+             isValidOptionalBool('isDeleted') &&
+             isValidOptionalBool('isForwarded') &&
+             isValidOptionalMap('metadata') &&
+             isValidOptionalTimestamp('updatedAt') &&
+             isValidOptionalTimestamp('deletedAt') &&
+             isValidTimestamp('createdAt');
+    }
+
+    function isValidGroupChat() {
+      return hasRequiredFields(['name', 'creatorId', 'participants', 'createdAt']) &&
+             isValidString('name', 1, 100) &&
+             isValidString('creatorId', 1, 128) &&
+             request.resource.data.participants is list &&
+             request.resource.data.participants.size() >= 2 &&
+             request.resource.data.participants.size() <= 256 &&
+             isValidOptionalString('description', 0, 500) &&
+             isValidOptionalString('avatarURL', 0, 1000) &&
+             isValidOptionalList('admins', 50) &&
+             isValidOptionalBool('onlyAdminsCanPost') &&
+             isValidOptionalBool('onlyAdminsCanEditInfo') &&
+             isValidOptionalTimestamp('updatedAt') &&
+             isValidTimestamp('createdAt');
+    }
+
+    function isValidEvent() {
+      return hasRequiredFields(['title', 'creatorId', 'startDate', 'type', 'createdAt']) &&
+             isValidString('title', 1, 200) &&
+             isValidString('creatorId', 1, 128) &&
+             request.resource.data.type in ['public', 'private', 'online', 'hybrid'] &&
+             isValidOptionalString('description', 0, 5000) &&
+             isValidOptionalString('location', 0, 300) &&
+             isValidOptionalString('onlineLink', 0, 500) &&
+             isValidOptionalString('coverURL', 0, 1000) &&
+             isValidOptionalString('communityId', 0, 128) &&
+             isValidOptionalList('tags', 20) &&
+             isValidOptionalPositive('attendingCount') &&
+             isValidOptionalPositive('interestedCount') &&
+             isValidOptionalPositive('maxAttendees') &&
+             isValidOptionalBool('isOnline') &&
+             isValidOptionalBool('isFree') &&
+             isValidOptionalPositive('price') &&
+             isValidTimestamp('startDate') &&
+             isValidOptionalTimestamp('endDate') &&
+             isValidTimestamp('createdAt');
+    }
+
+    function isValidPoll() {
+      return hasRequiredFields(['authorId', 'question', 'options', 'createdAt', 'expiresAt']) &&
+             isValidString('authorId', 1, 128) &&
+             isValidString('question', 5, 300) &&
+             request.resource.data.options is list &&
+             request.resource.data.options.size() >= 2 &&
+             request.resource.data.options.size() <= 10 &&
+             isValidOptionalBool('isMultipleChoice') &&
+             isValidOptionalBool('isAnonymous') &&
+             isValidOptionalBool('showResults') &&
+             isValidOptionalString('communityId', 0, 128) &&
+             isValidOptionalString('postId', 0, 128) &&
+             isValidOptionalPositive('totalVotes') &&
+             isValidTimestamp('expiresAt') &&
+             isValidTimestamp('createdAt');
+    }
+
+    function isValidHashtag() {
+      return hasRequiredFields(['name', 'createdAt']) &&
+             isValidString('name', 1, 100) &&
+             isValidOptionalPositive('postsCount') &&
+             isValidOptionalPositive('followersCount') &&
+             isValidOptionalBool('isTrending') &&
+             isValidTimestamp('createdAt');
+    }
+
+    function isValidUserStatus() {
+      return hasRequiredFields(['userId', 'status', 'updatedAt']) &&
+             isValidString('userId', 1, 128) &&
+             request.resource.data.status in ['online', 'away', 'busy', 'offline'] &&
+             isValidTimestamp('updatedAt');
+    }
+
+    function isValidMediaUpload() {
+      return hasRequiredFields(['uploaderId', 'url', 'type', 'createdAt']) &&
+             isValidString('uploaderId', 1, 128) &&
+             isValidString('url', 1, 1000) &&
+             request.resource.data.type in ['image', 'video', 'audio', 'document', 'gif'] &&
+             isValidOptionalString('thumbnailUrl', 0, 1000) &&
+             isValidOptionalString('deleteUrl', 0, 1000) &&
+             isValidOptionalString('mimeType', 0, 100) &&
+             isValidOptionalPositive('size') &&
+             isValidOptionalPositive('width') &&
+             isValidOptionalPositive('height') &&
+             isValidOptionalPositive('duration') &&
+             isValidOptionalString('postId', 0, 128) &&
+             isValidOptionalString('storyId', 0, 128) &&
+             isValidOptionalString('communityId', 0, 128) &&
+             isValidTimestamp('createdAt');
+    }
+
+    function isValidSupportTicket() {
+      return hasRequiredFields(['userId', 'subject', 'message', 'category', 'status', 'createdAt']) &&
+             isValidString('userId', 1, 128) &&
+             isValidString('subject', 5, 200) &&
+             isValidString('message', 10, 5000) &&
+             request.resource.data.category in ['bug', 'account', 'content', 'abuse', 'billing', 'feature_request', 'other'] &&
+             request.resource.data.status in ['open', 'in_progress', 'resolved', 'closed'] &&
+             isValidTimestamp('createdAt');
     }
 
     // ===============================================================
-    // Rules
+    // Helper — check participant in chat
     // ===============================================================
+    function isParticipantInChat(chatId) {
+      return request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+    }
 
+    function isParticipantInGroupChat(groupChatId) {
+      return request.auth.uid in get(/databases/$(database)/documents/group_chats/$(groupChatId)).data.participants;
+    }
+
+    // ===============================================================
+    // USERS
+    // ===============================================================
     match /users/{userId} {
       allow read: if isAuthenticated();
       allow create: if isOwner(userId) && isValidUser() && uidUnchanged('uid');
-      allow update: if isOwner(userId) && isValidUser() && uidNotModified('uid') && uidNotModified('createdAt');
+      allow update: if isAdmin() || isOwner(userId) || (
+        isAuthenticated() &&
+        affectedOnly([
+          'friendsCount', 'followersCount', 'followingCount',
+          'status', 'lastSeen', 'photoURL', 'displayName',
+          'username', 'updatedAt', 'postsCount', 'storiesCount'
+        ])
+      );
+      allow delete: if isAdmin();
     }
 
+    // User search index (public lightweight profile for search)
+    match /user_search/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId) || isAdmin();
+    }
+
+    // User presence / online status
+    match /user_status/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Close friends list
+    match /close_friends/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
+    }
+
+    // Pinned posts per user
+    match /pinned_posts/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isOwner(userId);
+    }
+
+    // ===============================================================
+    // POSTS
+    // ===============================================================
     match /posts/{postId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidPost() && uidUnchanged('authorId');
-      allow update: if isAuthenticated() && isValidPost() && uidNotModified('authorId') && uidNotModified('createdAt');
+      allow update: if isAuthenticated() && (
+        affectedOnly([
+          'likesCount', 'reactionCounts', 'score', 'commentsCount',
+          'sharesCount', 'viewsCount', 'savesCount', 'updatedAt', 'moderation',
+          'poll'
+        ]) ||
+        (currentUid() == resource.data.authorId && isValidPost() && uidNotModified('authorId')) ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (currentUid() == resource.data.authorId || isAdmin());
+    }
+
+    // Post views tracking
+    match /post_views/{viewId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == currentUid();
+      allow delete: if isAdmin();
+    }
+
+    // Shared posts
+    match /shared_posts/{shareId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == currentUid();
+      allow delete: if isAuthenticated() && resource.data.userId == currentUid();
+    }
+
+    // ===============================================================
+    // STORIES
+    // ===============================================================
+    match /stories/{storyId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidStory() && uidUnchanged('authorId');
+      allow update: if isAuthenticated() && (
+        (currentUid() == resource.data.authorId && affectedOnly(['views', 'viewsCount', 'reactions', 'updatedAt'])) ||
+        (currentUid() == resource.data.authorId && isValidStory() && uidNotModified('authorId')) ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (currentUid() == resource.data.authorId || isAdmin());
+    }
+
+    // Story replies (DM-like, private)
+    match /story_replies/{replyId} {
+      allow read: if isAuthenticated() && (
+        resource.data.senderId == currentUid() ||
+        resource.data.storyAuthorId == currentUid()
+      );
+      allow create: if isAuthenticated() && request.resource.data.senderId == currentUid();
       allow delete: if isAuthenticated() && (
-        request.auth.uid == resource.data.authorId ||
-        (
-          resource.data.communityId != null && 
-          get(/databases/$(database)/documents/communities/$(resource.data.communityId)).data.creatorId == request.auth.uid
-        ) ||
-        (
-          resource.data.communityId != null && 
-          get(/databases/$(database)/documents/communities/$(resource.data.communityId)).data.roles[request.auth.uid] in ['admin', 'moderator', 'owner']
-        )
+        resource.data.senderId == currentUid() ||
+        resource.data.storyAuthorId == currentUid()
       );
     }
 
+    // ===============================================================
+    // COMMENTS
+    // ===============================================================
     match /comments/{commentId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidComment() && uidUnchanged('authorId');
-      allow update: if isAuthenticated() && isValidComment() && uidNotModified('authorId') && uidNotModified('createdAt');
-      allow delete: if isAuthenticated() && request.auth.uid == resource.data.authorId;
+      allow update: if isAuthenticated() && (
+        affectedOnly(['likesCount', 'reactionCounts', 'repliesCount', 'updatedAt', 'isEdited']) ||
+        (currentUid() == resource.data.authorId && isValidComment() && uidNotModified('authorId')) ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (currentUid() == resource.data.authorId || isAdmin());
     }
 
+    // Comment replies (nested)
+    match /comment_replies/{replyId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidComment() && uidUnchanged('authorId');
+      allow update: if isAuthenticated() && (
+        affectedOnly(['likesCount', 'reactionCounts', 'updatedAt', 'isEdited']) ||
+        (currentUid() == resource.data.authorId && isValidComment() && uidNotModified('authorId')) ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (currentUid() == resource.data.authorId || isAdmin());
+    }
+
+    // ===============================================================
+    // REACTIONS & LIKES
+    // ===============================================================
     match /likes/{likeId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidLike() && uidUnchanged('userId');
       allow update: if isAuthenticated() && isValidLike() && uidNotModified('userId');
-      allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow delete: if isAuthenticated() && resource.data.userId == currentUid();
     }
 
+    // ===============================================================
+    // FOLLOWS & SOCIAL GRAPH
+    // ===============================================================
     match /followers/{followId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidFollow() && uidUnchanged('followerId');
-      allow delete: if isAuthenticated() && request.auth.uid == resource.data.followerId;
-    }
-
-    match /notifications/{notificationId} {
-      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
-      allow create: if isAuthenticated() && isValidNotification();
-      allow update: if isAuthenticated() && request.auth.uid == resource.data.userId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
-      allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
-    }
-
-    match /chats/{chatId} {
-      allow read: if isAuthenticated() && request.auth.uid in resource.data.participants;
-      allow create: if isAuthenticated() && isValidChat();
-      allow update: if isAuthenticated() && request.auth.uid in resource.data.participants;
-    }
-
-    match /messages/{messageId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidMessage();
-      allow update: if isAuthenticated() && (request.auth.uid == resource.data.senderId || request.auth.uid in get(/databases/$(database)/documents/chats/$(resource.data.chatId)).data.participants);
-    }
-
-    match /calls/{callId} {
-       allow read, update, delete: if isAuthenticated() && (request.auth.uid == resource.data.callerId || request.auth.uid == resource.data.receiverId);
-       allow create: if isAuthenticated();
-    }
-
-    match /typing/{typingId} {
-       allow read, write: if isAuthenticated();
-    }
-
-    match /communities/{communityId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidCommunity() && request.resource.data.creatorId == request.auth.uid;
-      allow update: if isAuthenticated() && (
-        request.auth.uid == resource.data.creatorId || 
-        ('roles' in resource.data && request.auth.uid in resource.data.roles && resource.data.roles[request.auth.uid] in ['admin', 'owner']) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberCount'])
+      allow create: if isAuthenticated() && isValidFollow() && (
+        currentUid() == request.resource.data.followerId ||
+        currentUid() == request.resource.data.followingId
       );
-    }
-
-    match /communities/{communityId}/rules/{ruleId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && (
-        get(/databases/$(database)/documents/communities/$(communityId)).data.creatorId == request.auth.uid ||
-        get(/databases/$(database)/documents/communities/$(communityId)).data.roles[request.auth.uid] in ['admin', 'owner']
+      allow delete: if isAuthenticated() && (
+        currentUid() == resource.data.followerId ||
+        currentUid() == resource.data.followingId
       );
-    }
-
-    match /communities/{communityId}/rule_acceptances/{userId} {
-      allow read: if isAuthenticated() && (
-        request.auth.uid == userId || 
-        get(/databases/$(database)/documents/communities/$(communityId)).data.creatorId == request.auth.uid ||
-        get(/databases/$(database)/documents/communities/$(communityId)).data.roles[request.auth.uid] in ['admin', 'moderator', 'owner']
-      );
-      allow write: if isAuthenticated() && request.auth.uid == userId;
-    }
-
-    match /feedback/{feedbackId} {
-      allow read: if false; // Only admins via console
-      allow create: if isAuthenticated() && isValidFeedback() && request.resource.data.userId == request.auth.uid;
-    }
-
-    match /interactions/{interactionId} {
-      allow read: if false; // Only backend/admin
-      allow create: if isAuthenticated() && request.resource.data.fromUid == request.auth.uid;
-    }
-
-    match /bookmarks/{bookmarkId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if isAuthenticated() && isValidBookmark() && request.resource.data.userId == request.auth.uid;
-      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
-    }
-
-    match /friend_requests/{requestId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidFriendRequest();
-      allow update: if isAuthenticated() && isValidFriendRequest();
-      allow delete: if isAuthenticated();
     }
 
     match /friendships/{friendshipId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidFriendship();
-      allow update: if isAuthenticated() && isValidFriendship();
-      allow delete: if false;
+      allow read: if isAuthenticated() && (resource == null || currentUid() in resource.data.users);
+      allow write: if isAuthenticated() && (
+        (resource == null && currentUid() in request.resource.data.users) ||
+        (resource != null && currentUid() in resource.data.users)
+      );
     }
 
+    match /friend_requests/{requestId} {
+      allow read: if isAuthenticated() && (
+        resource == null ||
+        currentUid() == resource.data.fromUid ||
+        currentUid() == resource.data.toUid
+      );
+      allow create: if isAuthenticated() && currentUid() == request.resource.data.fromUid;
+      allow update: if isAuthenticated() && (
+        currentUid() == resource.data.toUid ||
+        currentUid() == resource.data.fromUid
+      );
+      allow delete: if isAuthenticated() && (
+        currentUid() == resource.data.fromUid ||
+        currentUid() == resource.data.toUid
+      );
+    }
+
+    // ===============================================================
+    // BLOCKS & RESTRICTIONS
+    // ===============================================================
     match /blocks/{blockId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidBlock();
-      allow delete: if isAuthenticated() && request.auth.uid == resource.data.fromUid;
+      allow read: if isAuthenticated() && (
+        resource == null ||
+        currentUid() == resource.data.fromUid ||
+        currentUid() == resource.data.toUid
+      );
+      allow write: if isAuthenticated() && (
+        (resource == null && currentUid() == request.resource.data.fromUid) ||
+        (resource != null && currentUid() == resource.data.fromUid)
+      );
     }
 
     match /restrictions/{restrictionId} {
+      allow read: if isAuthenticated() && (
+        resource == null ||
+        currentUid() == resource.data.fromUid ||
+        currentUid() == resource.data.toUid
+      );
+      allow write: if isAuthenticated() && (
+        (resource == null && currentUid() == request.resource.data.fromUid) ||
+        (resource != null && currentUid() == resource.data.fromUid)
+      );
+    }
+
+    match /mutes/{muteId} {
+      allow read: if isAuthenticated() && (
+        resource == null || currentUid() == resource.data.mutedBy
+      );
+      allow write: if isAuthenticated() && (
+        (resource == null && currentUid() == request.resource.data.mutedBy) ||
+        (resource != null && currentUid() == resource.data.mutedBy)
+      );
+    }
+
+    // ===============================================================
+    // NOTIFICATIONS
+    // ===============================================================
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && (
+        currentUid() == resource.data.userId ||
+        currentUid() == resource.data.actorId
+      );
+      allow create: if isAuthenticated() && isValidNotification() && currentUid() == request.resource.data.actorId;
+      allow update: if isAuthenticated() && (
+        currentUid() == resource.data.userId &&
+        affectedOnly(['read', 'readAt'])
+      );
+      allow delete: if isAuthenticated() && (
+        currentUid() == resource.data.userId ||
+        isAdmin()
+      );
+    }
+
+    // Notification preferences
+    match /notification_settings/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
+    }
+
+    // Push tokens for notifications
+    match /push_tokens/{tokenId} {
+      allow read: if isAuthenticated() && resource.data.userId == currentUid();
+      allow write: if isAuthenticated() && (
+        (resource == null && request.resource.data.userId == currentUid()) ||
+        (resource != null && resource.data.userId == currentUid())
+      );
+    }
+
+    // ===============================================================
+    // DIRECT MESSAGES (1-to-1 chats)
+    // ===============================================================
+    match /chats/{chatId} {
+      allow read: if isAuthenticated() && (
+        resource == null || currentUid() in resource.data.participants
+      );
+      allow create: if isAuthenticated() &&
+        currentUid() in request.resource.data.participants &&
+        request.resource.data.participants.size() == 2;
+      allow update: if isAuthenticated() && currentUid() in resource.data.participants && (
+        affectedOnly([
+          'lastMessage', 'lastMessageAt', 'lastMessageSenderId',
+          'updatedAt', 'unreadCounts', 'typingUsers'
+        ]) ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && isParticipantInChat(chatId);
+        allow create: if isAuthenticated() &&
+          isParticipantInChat(chatId) &&
+          isValidMessage() &&
+          uidUnchanged('senderId');
+        allow update: if isAuthenticated() && (
+          (currentUid() == resource.data.senderId && affectedOnly(['content', 'isEdited', 'updatedAt'])) ||
+          (isParticipantInChat(chatId) && affectedOnly(['readBy', 'reactions', 'isDeleted', 'deletedAt'])) ||
+          isAdmin()
+        );
+        allow delete: if isAuthenticated() && (
+          currentUid() == resource.data.senderId || isAdmin()
+        );
+      }
+    }
+
+    // ===============================================================
+    // GROUP CHATS
+    // ===============================================================
+    match /group_chats/{groupChatId} {
+      allow read: if isAuthenticated() && (
+        resource == null || currentUid() in resource.data.participants
+      );
+      allow create: if isAuthenticated() &&
+        isValidGroupChat() &&
+        currentUid() == request.resource.data.creatorId &&
+        currentUid() in request.resource.data.participants;
+      allow update: if isAuthenticated() && currentUid() in resource.data.participants && (
+        affectedOnly([
+          'lastMessage', 'lastMessageAt', 'lastMessageSenderId',
+          'updatedAt', 'unreadCounts', 'typingUsers',
+          'participants', 'admins'
+        ]) ||
+        (currentUid() in resource.data.admins && affectedOnly([
+          'name', 'description', 'avatarURL', 'onlyAdminsCanPost',
+          'onlyAdminsCanEditInfo', 'updatedAt'
+        ])) ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (
+        currentUid() == resource.data.creatorId || isAdmin()
+      );
+
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && isParticipantInGroupChat(groupChatId);
+        allow create: if isAuthenticated() &&
+          isParticipantInGroupChat(groupChatId) &&
+          isValidMessage() &&
+          uidUnchanged('senderId');
+        allow update: if isAuthenticated() && (
+          (currentUid() == resource.data.senderId && affectedOnly(['content', 'isEdited', 'updatedAt'])) ||
+          (isParticipantInGroupChat(groupChatId) && affectedOnly(['readBy', 'reactions', 'isDeleted', 'deletedAt'])) ||
+          isAdmin()
+        );
+        allow delete: if isAuthenticated() && (
+          currentUid() == resource.data.senderId ||
+          currentUid() in get(/databases/$(database)/documents/group_chats/$(groupChatId)).data.admins ||
+          isAdmin()
+        );
+      }
+    }
+
+    // Message reactions (separate doc for scaling)
+    match /message_reactions/{reactionId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidRestriction();
-      allow update: if isAuthenticated() && isValidRestriction();
-      allow delete: if isAuthenticated() && request.auth.uid == resource.data.fromUid;
+      allow create: if isAuthenticated() && request.resource.data.userId == currentUid();
+      allow delete: if isAuthenticated() && resource.data.userId == currentUid();
+    }
+
+    // ===============================================================
+    // COMMUNITIES
+    // ===============================================================
+    match /communities/{communityId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+        isValidCommunity() &&
+        currentUid() == request.resource.data.creatorId;
+      allow update: if isAuthenticated() && (
+        currentUid() == resource.data.creatorId ||
+        (currentUid() in resource.data.admins) ||
+        affectedOnly(['members', 'memberCount', 'postCount', 'updatedAt']) ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (
+        currentUid() == resource.data.creatorId || isAdmin()
+      );
+
+      match /members/{memberId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (
+          currentUid() == memberId ||
+          currentUid() == get(/databases/$(database)/documents/communities/$(communityId)).data.creatorId ||
+          currentUid() in get(/databases/$(database)/documents/communities/$(communityId)).data.admins
+        );
+      }
+
+      // Community-specific posts feed (lightweight references)
+      match /posts/{postId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (
+          currentUid() in get(/databases/$(database)/documents/communities/$(communityId)).data.members ||
+          currentUid() == get(/databases/$(database)/documents/communities/$(communityId)).data.creatorId
+        );
+      }
+
+      // Community announcements (only admins can post)
+      match /announcements/{announcementId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && (
+          currentUid() == get(/databases/$(database)/documents/communities/$(communityId)).data.creatorId ||
+          currentUid() in get(/databases/$(database)/documents/communities/$(communityId)).data.admins ||
+          isAdmin()
+        );
+      }
+    }
+
+    // Community join requests (private communities)
+    match /community_requests/{requestId} {
+      allow read: if isAuthenticated() && (
+        resource == null ||
+        currentUid() == resource.data.userId ||
+        currentUid() == get(/databases/$(database)/documents/communities/$(resource.data.communityId)).data.creatorId ||
+        currentUid() in get(/databases/$(database)/documents/communities/$(resource.data.communityId)).data.admins
+      );
+      allow create: if isAuthenticated() && currentUid() == request.resource.data.userId;
+      allow update: if isAuthenticated() && (
+        currentUid() == get(/databases/$(database)/documents/communities/$(resource.data.communityId)).data.creatorId ||
+        currentUid() in get(/databases/$(database)/documents/communities/$(resource.data.communityId)).data.admins
+      );
+      allow delete: if isAuthenticated() && (
+        currentUid() == resource.data.userId ||
+        currentUid() == get(/databases/$(database)/documents/communities/$(resource.data.communityId)).data.creatorId
+      );
+    }
+
+    // ===============================================================
+    // EVENTS
+    // ===============================================================
+    match /events/{eventId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+        isValidEvent() &&
+        uidUnchanged('creatorId');
+      allow update: if isAuthenticated() && (
+        (currentUid() == resource.data.creatorId && isValidEvent() && uidNotModified('creatorId')) ||
+        affectedOnly(['attendingCount', 'interestedCount', 'updatedAt']) ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (
+        currentUid() == resource.data.creatorId || isAdmin()
+      );
+    }
+
+    // Event RSVPs
+    match /event_rsvps/{rsvpId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == currentUid();
+      allow update: if isAuthenticated() && resource.data.userId == currentUid();
+      allow delete: if isAuthenticated() && resource.data.userId == currentUid();
+    }
+
+    // ===============================================================
+    // POLLS (standalone, not attached to post)
+    // ===============================================================
+    match /polls/{pollId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidPoll() && uidUnchanged('authorId');
+      allow update: if isAuthenticated() && (
+        (currentUid() == resource.data.authorId && isValidPoll() && uidNotModified('authorId')) ||
+        affectedOnly(['options', 'totalVotes', 'updatedAt']) ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (
+        currentUid() == resource.data.authorId || isAdmin()
+      );
+    }
+
+    // Poll votes
+    match /poll_votes/{voteId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == currentUid();
+      allow delete: if isAuthenticated() && resource.data.userId == currentUid();
+    }
+
+    // ===============================================================
+    // BOOKMARKS & COLLECTIONS
+    // ===============================================================
+    match /bookmarks/{bookmarkId} {
+      allow read: if isAuthenticated() && resource.data.userId == currentUid();
+      allow create: if isAuthenticated() &&
+        isValidBookmark() &&
+        request.resource.data.userId == currentUid();
+      allow delete: if isAuthenticated() && resource.data.userId == currentUid();
+    }
+
+    match /bookmark_collections/{collectionId} {
+      allow read: if isAuthenticated() && resource.data.userId == currentUid();
+      allow create: if isAuthenticated() &&
+        isValidBookmarkCollection() &&
+        request.resource.data.userId == currentUid();
+      allow update: if isAuthenticated() && resource.data.userId == currentUid();
+      allow delete: if isAuthenticated() && resource.data.userId == currentUid();
+    }
+
+    // ===============================================================
+    // HASHTAGS & DISCOVER
+    // ===============================================================
+    match /hashtags/{hashtagId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidHashtag();
+      allow update: if isAuthenticated() && (
+        affectedOnly(['postsCount', 'followersCount', 'isTrending', 'updatedAt']) ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Hashtag follows
+    match /hashtag_follows/{followId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == currentUid();
+      allow delete: if isAuthenticated() && resource.data.userId == currentUid();
+    }
+
+    // Trending topics (admin managed)
+    match /trending_topics/{topicId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ===============================================================
+    // MEDIA
+    // ===============================================================
+    match /media_uploads/{mediaId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+        isValidMediaUpload() &&
+        uidUnchanged('uploaderId');
+      allow update: if isAuthenticated() && (
+        currentUid() == resource.data.uploaderId ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (
+        currentUid() == resource.data.uploaderId || isAdmin()
+      );
+    }
+
+    // ===============================================================
+    // LIVE STREAMS
+    // ===============================================================
+    match /live_streams/{streamId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.hostId == currentUid();
+      allow update: if isAuthenticated() && (
+        currentUid() == resource.data.hostId ||
+        affectedOnly(['viewerCount', 'likeCount', 'status', 'endedAt']) ||
+        isAdmin()
+      );
+      allow delete: if isAuthenticated() && (
+        currentUid() == resource.data.hostId || isAdmin()
+      );
+
+      match /viewers/{viewerId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && currentUid() == viewerId;
+      }
+
+      match /comments/{commentId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && request.resource.data.userId == currentUid();
+        allow delete: if isAuthenticated() && (
+          currentUid() == resource.data.userId ||
+          currentUid() == get(/databases/$(database)/documents/live_streams/$(streamId)).data.hostId ||
+          isAdmin()
+        );
+      }
+    }
+
+    // ===============================================================
+    // RELATIONSHIPS & AFFINITY
+    // ===============================================================
+    match /affinity_scores/{scoreId} {
+      allow read: if isAuthenticated() && (
+        resource == null ||
+        currentUid() == resource.data.viewerUid ||
+        currentUid() == resource.data.targetUid
+      );
+      allow write: if isAuthenticated() && currentUid() == request.resource.data.viewerUid;
     }
 
     match /relationship_settings/{userId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && request.auth.uid == userId && isValidRelationshipSettings();
-      allow update: if isAuthenticated() && request.auth.uid == userId && isValidRelationshipSettings();
+      allow write: if isAuthenticated() && currentUid() == userId;
     }
 
-    match /affinity_scores/{scoreId} {
-      allow read: if isAuthenticated() && (request.auth.uid == resource.data.viewerUid || request.auth.uid == resource.data.targetUid);
-      allow create: if isAuthenticated() && isValidAffinityScore() && request.resource.data.viewerUid == request.auth.uid;
-      allow update: if isAuthenticated() && isValidAffinityScore() && request.auth.uid == resource.data.viewerUid;
+    // ===============================================================
+    // SEARCH & ACTIVITY
+    // ===============================================================
+    // Recent searches per user
+    match /recent_searches/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
     }
+
+    // User activity feed (algorithmic)
+    match /activity_feeds/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if isAdmin();
+    }
+
+    // User activity log (for analytics, admin-only read in bulk)
+    match /user_activity/{activityId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == currentUid());
+      allow create: if isAuthenticated() && request.resource.data.userId == currentUid();
+      allow delete: if isAdmin();
+    }
+
+    // ===============================================================
+    // REPORTS & MODERATION
+    // ===============================================================
+    match /reports/{reportId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.reporterId == currentUid());
+      allow create: if isAuthenticated() && request.resource.data.reporterId == currentUid();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /moderation_actions/{actionId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.targetUserId == currentUid());
+      allow write: if isAdmin();
+    }
+
+    match /banned_users/{userId} {
+      allow read: if isAdmin() || currentUid() == userId;
+      allow write: if isAdmin();
+    }
+
+    match /warning_history/{userId} {
+      allow read: if isAdmin() || currentUid() == userId;
+      allow write: if isAdmin();
+    }
+
+    // ===============================================================
+    // SUPPORT
+    // ===============================================================
+    match /support_tickets/{ticketId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == currentUid());
+      allow create: if isAuthenticated() && isValidSupportTicket() && request.resource.data.userId == currentUid();
+      allow update: if isAdmin() || (
+        isAuthenticated() &&
+        resource.data.userId == currentUid() &&
+        affectedOnly(['message', 'updatedAt'])
+      );
+      allow delete: if isAdmin();
+
+      match /messages/{messageId} {
+        allow read: if isAdmin() || (
+          isAuthenticated() &&
+          get(/databases/$(database)/documents/support_tickets/$(ticketId)).data.userId == currentUid()
+        );
+        allow create: if isAuthenticated() && (
+          request.resource.data.senderId == currentUid() ||
+          isAdmin()
+        );
+        allow delete: if isAdmin();
+      }
+    }
+
+    // ===============================================================
+    // ADMIN & SYSTEM
+    // ===============================================================
+    match /admin_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /system_config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /system_notifications/{notifId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /feature_flags/{flagId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /app_versions/{versionId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /maintenance_mode/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /analytics_summary/{docId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /sponsored_content/{adId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Verified badges
+    match /verified_badges/{userId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Creator program
+    match /creator_program/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || (isAuthenticated() && currentUid() == userId);
+    }
+
   }
 }

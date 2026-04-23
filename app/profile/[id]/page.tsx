@@ -13,9 +13,13 @@ import { db } from '@/firebase';
 import { doc, getDoc, collection, query, where, onSnapshot, setDoc, deleteDoc, serverTimestamp, increment, updateDoc, getDocs } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { handleFirestoreError, OperationType } from '@/lib/firebase-errors';
-import { ensureDirectChat } from '@/lib/chat';
-import { blockUser, cancelFriendRequest, getRelationshipSnapshot, removeFriendship, respondToFriendRequest, sendFriendRequest, setRestricted, toggleMutedFriendship, unblockUser } from '@/lib/friendships';
+import { blockUser, cancelFriendRequest, getRelationshipSnapshot, removeFriendship, respondToFriendRequest, sendFriendRequest, setRestricted, toggleMutedFriendship, unblockUser, toggleFollowUser } from '@/lib/friendships';
+
+import { createNotification } from '@/lib/notifications';
 import { useTranslation } from 'react-i18next';
+import { isAdmin } from '@/lib/admin';
+import { LayoutDashboard } from 'lucide-react';
+import { useRequireAuth } from '@/hooks/useRequireAuth';
 
 export default function ProfilePage() {
   const { t } = useTranslation('common');
@@ -23,6 +27,7 @@ export default function ProfilePage() {
   const router = useRouter();
   const userId = params?.id as string;
   const { profile: currentUser, isAuthReady } = useAppStore();
+  const { user } = useRequireAuth();
   
   const [viewedUser, setViewedUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -39,26 +44,33 @@ export default function ProfilePage() {
   const isOwner = currentUser?.uid === userId;
   const isVIP = viewedUser?.displayName === 'Philippe Boechat';
 
+  // State for conditional rendering instead of early return
+  const showLoading = !isAuthReady || !user;
+
   useEffect(() => {
     if (!userId || !isAuthReady) return;
 
-    const fetchUser = async () => {
-      try {
-        const docRef = doc(db, 'users', userId);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setViewedUser(data);
+    const docRef = doc(db, 'users', userId);
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setViewedUser({ uid: userId, ...data });
+        // Update local friendsCount state from document if it exists, otherwise keep current
+        if (data.friendsCount !== undefined) {
+          setFriendsCount(data.friendsCount);
         }
-      } catch (error) {
-        handleFirestoreError(error, OperationType.GET, `users/${userId}`);
-      } finally {
+      } else {
         setLoading(false);
       }
-    };
+      setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `users/${userId}`);
+      setLoading(false);
+    });
 
-    fetchUser();
+    return () => unsubscribe();
   }, [userId, isAuthReady]);
+
 
   // Fetch photos and posts count
   useEffect(() => {
@@ -106,58 +118,25 @@ export default function ProfilePage() {
     void loadRelationship();
   }, [currentUser, userId, isOwner, isAuthReady]);
 
-  useEffect(() => {
-    if (!userId || !isAuthReady) return;
+  // Removed loadFriendsCount because we now get it in real-time from the user document
 
-    const loadFriendsCount = async () => {
-      try {
-        const friendshipsSnapshot = await getDocs(query(collection(db, 'friendships'), where('users', 'array-contains', userId)));
-        setFriendsCount(
-          friendshipsSnapshot.docs.filter((friendshipDoc) => friendshipDoc.data().status === 'active').length
-        );
-      } catch (error) {
-        handleFirestoreError(error, OperationType.GET, `friendships/${userId}`);
-      }
-    };
-
-    void loadFriendsCount();
-  }, [userId, isAuthReady]);
 
   const handleFollowToggle = async () => {
     if (!currentUser || !userId) return;
-    const followRef = doc(db, 'followers', `${currentUser.uid}_${userId}`);
-    const userRef = doc(db, 'users', userId);
-    const currentUserRef = doc(db, 'users', currentUser.uid);
 
     try {
-      if (isFollowing) {
-        await deleteDoc(followRef);
-        await updateDoc(userRef, { followersCount: increment(-1) });
-        await updateDoc(currentUserRef, { followingCount: increment(-1) });
-      } else {
-        await setDoc(followRef, {
-          followerId: currentUser.uid,
-          followingId: userId,
-          createdAt: serverTimestamp()
-        });
-        await updateDoc(userRef, { followersCount: increment(1) });
-        await updateDoc(currentUserRef, { followingCount: increment(1) });
-
-        // Create notification for follow
-        await setDoc(doc(collection(db, 'notifications')), {
-          userId: userId,
-          actorId: currentUser.uid,
-          actorName: currentUser.displayName,
-          actorPhoto: currentUser.photoURL || '',
-          type: 'follow',
-          read: false,
-          createdAt: serverTimestamp()
-        });
-      }
+      await toggleFollowUser({
+        followerUid: currentUser.uid,
+        followingUid: userId,
+        isFollowing: isFollowing,
+        followerName: currentUser.displayName,
+        followerPhoto: currentUser.photoURL
+      });
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'followers/notifications');
     }
   };
+
 
   const refreshRelationship = async () => {
     if (!currentUser || !userId || isOwner) return;
@@ -169,32 +148,32 @@ export default function ProfilePage() {
     if (!currentUser || !viewedUser || isRelationshipBusy) return;
 
     setIsRelationshipBusy(true);
+    let errorPath = 'friend_requests';
     try {
       switch (relationship?.status) {
         case 'request_received':
+          errorPath = `friendships/${currentUser.uid}__${viewedUser.uid}`;
           await respondToFriendRequest({
             requestOwnerUid: viewedUser.uid,
             actorUser: currentUser,
             action: 'accept',
           });
-          setFriendsCount((current) => current + 1);
           break;
         case 'request_sent':
+          errorPath = `friend_requests/${currentUser.uid}__${viewedUser.uid}`;
           await cancelFriendRequest(currentUser.uid, viewedUser.uid);
           break;
         case 'friends':
         case 'muted':
+          errorPath = `friendships/${currentUser.uid}__${viewedUser.uid}`;
           await removeFriendship(currentUser.uid, viewedUser.uid);
-          setFriendsCount((current) => Math.max(current - 1, 0));
           break;
+
         default: {
-          const message = relationship?.settings?.allowFriendRequestMessage
-            ? window.prompt('Optional message for this friend request:', '') || ''
-            : '';
+          errorPath = `friend_requests/${currentUser.uid}__${viewedUser.uid}`;
           await sendFriendRequest({
             fromUser: currentUser,
             toUser: viewedUser,
-            message,
             source: 'profile',
           });
         }
@@ -202,7 +181,7 @@ export default function ProfilePage() {
 
       await refreshRelationship();
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'friendships');
+      handleFirestoreError(error, OperationType.WRITE, errorPath);
     } finally {
       setIsRelationshipBusy(false);
     }
@@ -266,23 +245,33 @@ export default function ProfilePage() {
   };
 
   const handleMessageClick = async () => {
-    if (!currentUser || !userId) return;
+    if (!currentUser || !userId || !viewedUser) return;
 
     try {
-      const chatId = await ensureDirectChat(currentUser.uid, userId);
-      router.push(`/messages?chatId=${chatId}`);
+      const mode = typeof window !== 'undefined' && window.innerWidth < 1280 ? 'page' : 'floating';
+      const chatUser = {
+        uid: userId,
+        displayName: viewedUser.displayName || 'Usuário',
+        photoURL: viewedUser.photoURL || '',
+        username: viewedUser.username || '',
+      };
+
+      window.dispatchEvent(
+        new CustomEvent('aura:open-chat-user', {
+          detail: { user: chatUser, mode },
+        })
+      );
+
+      if (mode === 'page') {
+        router.push('/messages');
+      }
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'chats');
     }
   };
 
-  if (loading) {
-    return <div className="min-h-screen bg-background flex items-center justify-center">{t('profile_page.loading', 'Loading...')}</div>;
-  }
-
-  if (!viewedUser) {
-    return <div className="min-h-screen bg-background flex items-center justify-center">{t('profile_page.user_not_found', 'User not found')}</div>;
-  }
+  const isLoading = loading || showLoading;
+  const isNotFound = !viewedUser && !isLoading;
 
   const primaryRelationshipLabel =
     relationship?.status === 'request_received'
@@ -308,33 +297,42 @@ export default function ProfilePage() {
             ? <ShieldBan className="w-4 h-4" />
             : <UserPlus className="w-4 h-4" />;
 
-  return (
-    <div className="min-h-screen bg-background pb-12">
-      <TopNav />
+    return (
+      <div className="min-h-screen bg-background pb-12">
+        <TopNav />
 
-      <main className="pt-[64px] flex flex-col items-center w-full">
+      {isLoading ? (
+        <div className="min-h-[80vh] flex items-center justify-center">
+          <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
+        </div>
+      ) : isNotFound ? (
+        <div className="min-h-[80vh] flex items-center justify-center">
+          <p className="text-muted-foreground font-medium">{t('profile_page.user_not_found', 'User not found')}</p>
+        </div>
+      ) : (
+        <main className="pt-[64px] flex flex-col items-center w-full">
         
         {/* Modern Header Section */}
-        <div className="w-full max-w-[800px] mx-auto px-4 sm:px-6 pt-8 pb-4">
+        <div className="w-full max-w-[800px] mx-auto px-4 sm:px-6 pt-5 pb-3">
           <div className="bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-border/50 overflow-hidden relative">
             
             {/* Abstract Gradient Background or Cover Photo */}
             {viewedUser.coverURL ? (
-              <div className="absolute top-0 left-0 right-0 h-[180px]">
+                <div className="absolute top-0 left-0 right-0 h-[150px]">
                 <img src={viewedUser.coverURL} alt="Cover" className="w-full h-full object-cover" />
                 <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/20"></div>
               </div>
             ) : (
-              <div className={`absolute top-0 left-0 right-0 h-[180px] opacity-80 ${isVIP ? 'bg-gradient-to-r from-amber-200 via-yellow-400 to-amber-500' : 'bg-gradient-to-br from-primary/20 via-accent/20 to-purple-500/20'}`}>
+               <div className={`absolute top-0 left-0 right-0 h-[150px] opacity-80 ${isVIP ? 'bg-gradient-to-r from-amber-200 via-yellow-400 to-amber-500' : 'bg-gradient-to-br from-primary/20 via-accent/20 to-purple-500/20'}`}>
                 <div className="absolute inset-0 backdrop-blur-[100px]"></div>
               </div>
             )}
 
-            <div className="relative pt-[120px] px-8 pb-10 flex flex-col items-center text-center">
+            <div className="relative pt-[96px] px-6 pb-7 flex flex-col items-center text-center">
               {/* Avatar with Glow */}
               <div className="relative group">
                 <div className={`absolute inset-0 bg-primary/20 rounded-full blur-2xl group-hover:bg-primary/30 transition-all duration-500 ${isVIP ? 'bg-yellow-400/30' : ''}`} />
-                <div className={`relative w-[160px] h-[160px] rounded-full border-[6px] border-white bg-white overflow-hidden shadow-2xl mb-6 ring-4 transition-transform duration-500 group-hover:scale-[1.02] ${isVIP ? 'ring-yellow-400/50' : 'ring-primary/5'}`}>
+                <div className={`relative w-[128px] h-[128px] rounded-full border-[5px] border-white bg-white overflow-hidden shadow-xl mb-4 ring-4 transition-transform duration-500 group-hover:scale-[1.02] ${isVIP ? 'ring-yellow-400/50' : 'ring-primary/5'}`}>
                   {viewedUser.photoURL ? (
                     <img src={viewedUser.photoURL} alt={viewedUser.displayName || 'Profile'} className="w-full h-full object-cover" />
                   ) : (
@@ -347,7 +345,7 @@ export default function ProfilePage() {
 
               {/* Name & Bio - Premium Typography */}
               <div className="animate-in fade-in slide-in-from-bottom-3 duration-700">
-                <h1 className="text-4xl font-black text-foreground tracking-tight mb-3 flex items-center justify-center gap-3">
+                <h1 className="text-[40px] font-black text-foreground tracking-tight mb-2 flex items-center justify-center gap-3">
                   {viewedUser.displayName}
                   {isVIP && (
                     <div className="relative">
@@ -356,13 +354,16 @@ export default function ProfilePage() {
                     </div>
                   )}
                 </h1>
-                <p className="text-muted-foreground/80 text-[16px] max-w-[500px] mb-8 leading-relaxed font-medium mx-auto">
+                {viewedUser.username && (
+                  <p className="text-primary font-bold text-[16px] mb-2">@{viewedUser.username}</p>
+                )}
+                <p className="text-muted-foreground/80 text-[15px] max-w-[500px] mb-6 leading-7 font-medium mx-auto">
                   {viewedUser.bio || t('profile_page.default_bio', 'Exploring the digital frontier. Passionate about design, technology, and building communities. 🚀')}
                 </p>
               </div>
 
               {/* Stats & Info - Modern Pill Design */}
-              <div className="flex flex-wrap items-center justify-center gap-4 mb-10">
+              <div className="flex flex-wrap items-center justify-center gap-3 mb-7">
                 {viewedUser.education && (
                   <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-50 border border-slate-100/50 text-slate-600 text-[13px] font-bold shadow-sm">
                     <GraduationCap className="w-4 h-4 text-primary" />
@@ -388,13 +389,13 @@ export default function ProfilePage() {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-3 w-full sm:w-auto">
+                <div className="flex gap-2.5 w-full sm:w-auto">
                 {!isOwner && (
                   <>
                     <button 
                       onClick={handlePrimaryRelationshipAction}
                       disabled={isRelationshipBusy || relationship?.status === 'blocked'}
-                      className={`flex-1 sm:flex-none px-6 py-2.5 rounded-full font-semibold text-[15px] transition-all shadow-sm flex items-center justify-center gap-2 ${
+                      className={`flex-1 sm:flex-none px-5 py-2.5 rounded-full font-semibold text-[14px] transition-all shadow-sm flex items-center justify-center gap-2 ${
                         relationship?.status === 'friends' || relationship?.status === 'muted'
                           ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
                           : relationship?.status === 'request_sent'
@@ -410,13 +411,13 @@ export default function ProfilePage() {
                     <button 
                       onClick={handleMessageClick}
                       disabled={relationship?.status === 'blocked'}
-                      className="flex-1 sm:flex-none bg-muted hover:bg-gray-200 text-foreground px-8 py-2.5 rounded-full font-semibold text-[15px] transition-all disabled:opacity-50"
+                      className="flex-1 sm:flex-none bg-muted hover:bg-gray-200 text-foreground px-6 py-2.5 rounded-full font-semibold text-[14px] transition-all disabled:opacity-50"
                     >
                       {t('profile_page.message', 'Message')}
                     </button>
                     <button 
                       onClick={handleFollowToggle}
-                      className={`flex-1 sm:flex-none px-6 py-2.5 rounded-full font-semibold text-[15px] transition-all shadow-sm ${
+                      className={`flex-1 sm:flex-none px-5 py-2.5 rounded-full font-semibold text-[14px] transition-all shadow-sm ${
                         isFollowing 
                           ? 'bg-muted hover:bg-gray-200 text-foreground' 
                           : 'bg-white border border-border/50 hover:border-primary/30 text-foreground'
@@ -427,12 +428,23 @@ export default function ProfilePage() {
                   </>
                 )}
                 {isOwner && (
-                  <button 
-                    onClick={() => setIsEditModalOpen(true)}
-                    className="flex-1 sm:flex-none bg-muted hover:bg-gray-200 text-foreground px-8 py-2.5 rounded-full font-semibold text-[15px] transition-all"
-                  >
-                    {t('profile_page.edit_profile', 'Edit Profile')}
-                  </button>
+                  <div className="flex gap-2 w-full sm:w-auto">
+                    <button 
+                      onClick={() => setIsEditModalOpen(true)}
+                      className="flex-1 sm:flex-none bg-muted hover:bg-gray-200 text-foreground px-6 py-2.5 rounded-full font-semibold text-[14px] transition-all"
+                    >
+                      {t('profile_page.edit_profile', 'Edit Profile')}
+                    </button>
+                    {isAdmin(currentUser) && (
+                      <button 
+                        onClick={() => router.push('/admin')}
+                        className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-6 py-2.5 rounded-full font-semibold text-[14px] transition-all shadow-sm"
+                      >
+                        <LayoutDashboard className="w-4 h-4" />
+                        {t('admin.dashboard', 'Painel Admin')}
+                      </button>
+                    )}
+                  </div>
                 )}
                 {!isOwner && (
                   <div className="relative">
@@ -472,7 +484,7 @@ export default function ProfilePage() {
               </div>
 
               {!isOwner && relationship && (
-                <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-[13px] text-muted-foreground">
+                 <div className="mt-3 flex flex-wrap items-center justify-center gap-2.5 text-[12px] text-muted-foreground">
                   <span className="px-3 py-1 rounded-full bg-muted/50">
                     Status: <span className="font-semibold text-foreground">{t(`relationship.${relationship.status}`, relationship.status.replace('_', ' ')) as string}</span>
                   </span>
@@ -487,13 +499,20 @@ export default function ProfilePage() {
             </div>
 
             {/* Stats Bar */}
-            <div className="grid grid-cols-3 border-t border-border/50 divide-x divide-border/50 bg-muted/10">
+            <div className="grid grid-cols-4 border-t border-border/50 divide-x divide-border/50 bg-muted/10">
               <div 
                 onClick={() => { setActiveTab('followers'); document.getElementById('profile-tabs')?.scrollIntoView({ behavior: 'smooth' }); }}
                 className="py-4 text-center hover:bg-muted/30 transition-colors cursor-pointer group"
               >
                 <div className="text-xl font-bold text-foreground group-hover:text-primary transition-colors">{friendsCount}</div>
                 <div className="text-[13px] font-medium text-muted-foreground uppercase tracking-wider mt-0.5 group-hover:text-primary transition-colors">{t('profile_page.friends', 'Friends')}</div>
+              </div>
+              <div 
+                onClick={() => { setActiveTab('followers'); document.getElementById('profile-tabs')?.scrollIntoView({ behavior: 'smooth' }); }}
+                className="py-4 text-center hover:bg-muted/30 transition-colors cursor-pointer group"
+              >
+                <div className="text-xl font-bold text-foreground group-hover:text-primary transition-colors">{viewedUser.followersCount || 0}</div>
+                <div className="text-[13px] font-medium text-muted-foreground uppercase tracking-wider mt-0.5 group-hover:text-primary transition-colors">{t('profile_page.tab_followers', 'Followers')}</div>
               </div>
               <div 
                 onClick={() => { setActiveTab('following'); document.getElementById('profile-tabs')?.scrollIntoView({ behavior: 'smooth' }); }}
@@ -510,6 +529,7 @@ export default function ProfilePage() {
                 <div className="text-[13px] font-medium text-muted-foreground uppercase tracking-wider mt-0.5 group-hover:text-primary transition-colors">{t('profile_page.tab_posts', 'Posts')}</div>
               </div>
             </div>
+
           </div>
         </div>
 
@@ -547,7 +567,7 @@ export default function ProfilePage() {
         <div className="w-full max-w-[1000px] mx-auto px-4 flex flex-col lg:flex-row gap-6">
           
           {/* Left Column (Sidebar Info) */}
-          <div className="w-full lg:w-[340px] flex flex-col gap-6 shrink-0">
+          <div className="w-full lg:w-[340px] flex flex-col gap-6 shrink-0 lg:sticky lg:top-[84px] self-start">
             
             {/* Intro Card */}
             <div className="bg-white rounded-3xl shadow-[0_2px_8px_rgba(0,0,0,0.04)] border border-border/50 p-6">
@@ -655,14 +675,14 @@ export default function ProfilePage() {
 
         </div>
 
+        <EditProfileModal 
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          currentUserData={viewedUser}
+          onSave={handleSaveProfile}
+        />
       </main>
-      
-      <EditProfileModal 
-        isOpen={isEditModalOpen}
-        onClose={() => setIsEditModalOpen(false)}
-        currentUserData={viewedUser}
-        onSave={handleSaveProfile}
-      />
+      )}
     </div>
   );
 }

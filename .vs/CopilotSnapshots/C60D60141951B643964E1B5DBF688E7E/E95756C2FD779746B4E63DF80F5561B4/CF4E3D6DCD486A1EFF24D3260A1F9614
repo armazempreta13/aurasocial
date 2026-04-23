@@ -1,0 +1,98 @@
+﻿'use client';
+
+import { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
+import { db } from '@/firebase';
+import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { Activity, ShieldAlert, UserMinus, Settings, MessageSquare, Clock } from 'lucide-react';
+import { useAppStore } from '@/lib/store';
+
+export default function CommunityAdminAuditPage() {
+  const params = useParams();
+  const id = params?.id as string;
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchLogs = async () => {
+      try {
+        const q = query(
+          collection(db, 'communities', id as string, 'audit_logs'),
+          orderBy('timestamp', 'desc'),
+          limit(10) // Reduzido para economizar cota
+        );
+        const snapshot = await getDocs(q);
+        setLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      } catch (err) {
+        console.error('Audit restricted or empty', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchLogs();
+  }, [id]);
+
+  const getActionDetails = (action: string) => {
+    switch(action) {
+       case 'DELETE_POST': return { label: 'Deleted a Post', color: 'text-red-500', bg: 'bg-red-50', icon: MessageSquare };
+       case 'KICK_MEMBER': return { label: 'Removed a Member', color: 'text-red-500', bg: 'bg-red-50', icon: UserMinus };
+       case 'ROLE_CHANGE': return { label: 'Changed Member Permissions', color: 'text-blue-500', bg: 'bg-blue-50', icon: ShieldAlert };
+       case 'UPDATE_SECURITY': return { label: 'Updated Security Settings', color: 'text-emerald-500', bg: 'bg-emerald-50', icon: Settings };
+       default: return { label: 'Administrative Action', color: 'text-muted-foreground', bg: 'bg-muted', icon: Activity };
+    }
+  }
+
+  if (loading) return <div className="p-8 text-center text-muted-foreground animate-pulse">Loading logs...</div>;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-extrabold text-foreground tracking-tight">Audit Logs</h1>
+        <p className="text-muted-foreground mt-1">Immutable trail of all administrative actions in this community.</p>
+      </div>
+
+      <div className="bg-white rounded-3xl border border-border/50 shadow-sm overflow-hidden">
+         {logs.length === 0 ? (
+           <div className="p-12 text-center flex flex-col items-center">
+              <div className="w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mb-4">
+                <Activity className="w-8 h-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-bold text-foreground">Audit System Active</h3>
+              <p className="text-muted-foreground max-w-sm mt-2">
+                Action logging has been initialized. Future actions will be safely recorded here.
+              </p>
+           </div>
+         ) : (
+           <ul className="divide-y divide-border/50">
+             {logs.map(log => {
+               const details = getActionDetails(log.action);
+               const Icon = details.icon;
+               const date = log.timestamp?.toDate ? log.timestamp.toDate() : new Date();
+
+               return (
+                 <li key={log.id} className="p-6 hover:bg-muted/10 transition-colors flex items-start gap-4">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${details.bg} ${details.color}`}>
+                       <Icon className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-bold text-foreground">{log.actorName || 'Admin'}</span>
+                        <span className="text-sm text-foreground">{details.label}</span>
+                      </div>
+                      {log.targetName && (
+                        <p className="text-sm text-muted-foreground">Affected target: <span className="font-semibold">{log.targetName}</span></p>
+                      )}
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-2">
+                        <Clock className="w-3 h-3" />
+                        {date.toLocaleString()}
+                      </div>
+                    </div>
+                 </li>
+               )
+             })}
+           </ul>
+         )}
+      </div>
+    </div>
+  );
+}

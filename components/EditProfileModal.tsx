@@ -1,10 +1,11 @@
 import { useState, useRef } from 'react';
 import { X, Camera, Image as ImageIcon, Loader2, Upload } from 'lucide-react';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, query, collection, where, getDocs } from 'firebase/firestore';
 import { db } from '@/firebase';
 import { useAppStore } from '@/lib/store';
 import { handleFirestoreError, OperationType } from '@/lib/firebase-errors';
 import { uploadImage } from '@/lib/image-utils';
+import { validateContent } from '@/lib/moderation/utils';
 
 interface EditProfileModalProps {
   isOpen: boolean;
@@ -23,7 +24,8 @@ export function EditProfileModal({ isOpen, onClose, currentUserData, onSave }: E
     work: currentUserData?.work || '',
     relationship: currentUserData?.relationship || '',
     photoURL: currentUserData?.photoURL || '',
-    coverURL: currentUserData?.coverURL || ''
+    coverURL: currentUserData?.coverURL || '',
+    username: currentUserData?.username || ''
   });
   const [isSaving, setIsSaving] = useState(false);
   const [uploadingField, setUploadingField] = useState<'photoURL' | 'coverURL' | null>(null);
@@ -60,11 +62,101 @@ export function EditProfileModal({ isOpen, onClose, currentUserData, onSave }: E
     
     setIsSaving(true);
     try {
+      // 🛡️ MODERATION LAYER
+      const checks = [
+        { val: formData.username, type: 'username' as const },
+        { val: formData.displayName, type: 'post' as const },
+        { val: formData.bio, type: 'post' as const }
+      ];
+
+      for (const check of checks) {
+        const result = validateContent(check.val, check.type);
+        if (result.status === 'block') {
+          throw new Error('Suas informações de perfil contêm termos não permitidos.');
+        }
+      }
+
+      // 1. Validate Username (Unique check)
+      if (formData.username !== currentUserData?.username) {
+        const usernameQuery = query(collection(db, 'users'), where('username', '==', formData.username.toLowerCase()));
+        const snapshot = await getDocs(usernameQuery);
+        if (!snapshot.empty) {
+          throw new Error('This username is already taken. Please choose another one.');
+        }
+      }
+
       const userRef = doc(db, 'users', profile.uid);
-      await updateDoc(userRef, formData);
-      onSave(formData);
+      const updatedData = {
+        ...formData,
+        username: formData.username.toLowerCase().replace(/[^a-z0-9_]/g, '')
+      };
+      
+      await updateDoc(userRef, updatedData);
+
+      // 🔄 SYNC LAYER: Update recent posts and comments with new profile info
+      // This ensures the avatar and name update across the feed for everyone.
+      try {
+        const { writeBatch } = await import('firebase/firestore');
+        const batch = writeBatch(db);
+        let operationsCount = 0;
+
+        // Update latest posts
+        const postsQuery = query(
+          collection(db, 'posts'),
+          where('authorId', '==', profile.uid),
+          orderBy('createdAt', 'desc'),
+          limit(50)
+        );
+        const postsSnap = await getDocs(postsQuery);
+        postsSnap.docs.forEach(postDoc => {
+          batch.update(postDoc.ref, {
+            authorName: updatedData.displayName,
+            authorPhoto: updatedData.photoURL,
+            authorUsername: updatedData.username
+          });
+          operationsCount++;
+        });
+
+        // Update latest comments
+        const commentsQuery = query(
+          collection(db, 'comments'),
+          where('authorId', '==', profile.uid),
+          orderBy('createdAt', 'desc'),
+          limit(50)
+        );
+        const commentsSnap = await getDocs(commentsQuery);
+        commentsSnap.docs.forEach(commentDoc => {
+          batch.update(commentDoc.ref, {
+            authorName: updatedData.displayName,
+            authorPhoto: updatedData.photoURL
+          });
+          operationsCount++;
+        });
+
+        if (operationsCount > 0) {
+          await batch.commit();
+        }
+      } catch (syncError) {
+        console.error('Profile sync error (non-fatal):', syncError);
+        // Non-fatal because the profile itself was updated successfully
+      }
+
+      // ✅ Feature 10: Atualiza o Zustand store IMEDIATAMENTE (sem reload)
+      useAppStore.setState((state) => ({
+        profile: state.profile ? { ...state.profile, ...updatedData } : state.profile
+      }));
+
+      // Notify other tabs
+      if (typeof window !== 'undefined') {
+        const syncChannel = new BroadcastChannel('aura_feed_sync');
+        syncChannel.postMessage({ type: 'profile_updated', payload: { ...updatedData, uid: profile.uid } });
+        syncChannel.close();
+      }
+
+      onSave(updatedData);
       onClose();
-    } catch (error) {
+    } catch (error: any) {
+      alert(error.message || 'Failed to update profile');
       handleFirestoreError(error, OperationType.UPDATE, `users/${profile.uid}`);
     } finally {
       setIsSaving(false);
@@ -209,6 +301,24 @@ export function EditProfileModal({ isOpen, onClose, currentUserData, onSave }: E
             <div className="flex flex-col gap-4">
               <h3 className="text-[15px] font-bold text-foreground">Personal Details</h3>
               
+              <div className="flex flex-col gap-2">
+                <label className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">Username (@)</label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground font-bold">@</span>
+                  <input 
+                    type="text" 
+                    name="username"
+                    value={formData.username}
+                    onChange={(e) => setFormData({ ...formData, username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })}
+                    required
+                    maxLength={30}
+                    placeholder="yourhandle"
+                    className="w-full bg-muted/30 border border-border/50 rounded-xl pl-8 pr-4 py-2.5 text-[14px] font-bold focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/50 transition-all"
+                  />
+                </div>
+                <p className="text-[11px] text-muted-foreground">Only lowercase letters, numbers, and underscores allowed.</p>
+              </div>
+
               <div className="flex flex-col gap-2">
                 <label className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider">Name</label>
                 <input 

@@ -1,0 +1,49 @@
+﻿'use client';
+
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { Suspense } from 'react';
+import { Loader2 } from 'lucide-react';
+import { useAppStore } from '@/lib/store';
+import { ChatWorkspace } from '@/components/chat/ChatWorkspace';
+
+function AuthTransitionScreen() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-white">
+      <Loader2 className="animate-spin text-blue-600" size={32} />
+    </div>
+  );
+}
+
+function MessagesPageContent() {
+  return <ChatWorkspace />;
+}
+
+export default function MessagesPage() {
+  const router = useRouter();
+  const user = useAppStore((state) => state.user);
+  const profile = useAppStore((state) => state.profile);
+  const isAuthReady = useAppStore((state) => state.isAuthReady);
+
+  useEffect(() => {
+    if (isAuthReady && !user) {
+      router.replace('/');
+    }
+  }, [isAuthReady, router, user]);
+
+  if (!isAuthReady || !user || !profile) {
+    return <AuthTransitionScreen />;
+  }
+
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-white">
+          <Loader2 className="animate-spin text-blue-600" />
+        </div>
+      }
+    >
+      <MessagesPageContent />
+    </Suspense>
+  );
+}

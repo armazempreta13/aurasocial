@@ -81,8 +81,17 @@ export function getMessages(chatId: string) {
   return db.messages.filter((msg: any) => msg.chatId === chatId);
 }
 
+let signalIdCounter = 0;
 export function addSignal(toId: string, fromId: string, type: string, payload: any) {
-  db.signals.push({ id: Date.now(), toId, fromId, type, payload, consumed: false });
+  signalIdCounter++;
+  db.signals.push({ 
+    id: `${Date.now()}-${signalIdCounter}`, 
+    toId, 
+    fromId, 
+    type, 
+    payload, 
+    consumed: false 
+  });
   if (db.signals.length > 200) db.signals = db.signals.slice(-100);
 }
 

@@ -28,7 +28,9 @@ export function rankTrendingHashtags(posts: any[]) {
   const scores = new Map<string, number>();
 
   posts.forEach((post, index) => {
-    const hashtags = Array.isArray(post.hashtags) ? post.hashtags : [];
+    const fromField = Array.isArray(post?.hashtags) ? post.hashtags : [];
+    const fromContent = typeof post?.content === 'string' ? extractHashtags(post.content) : [];
+    const hashtags = (fromField.length > 0 ? fromField : fromContent) as string[];
     if (hashtags.length === 0) return;
 
     const engagementScore =
@@ -38,7 +40,8 @@ export function rankTrendingHashtags(posts: any[]) {
       Math.min(post.sharesCount || 0, 20) * 0.5;
     const recencyScore = Math.max(1, 5 - index * 0.08);
 
-    hashtags.forEach((tag: string) => {
+    // Deduplicate per-post so a duplicated hashtags array doesn't inflate scoring.
+    Array.from(new Set(hashtags)).forEach((tag: string) => {
       const normalizedTag = normalizeHashtagTag(tag);
       if (!normalizedTag) return;
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '@/firebase';
 import Link from 'next/link';
 
@@ -8,18 +8,17 @@ export function FollowersList({ userId, type }: { userId: string, type: 'followe
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchUsers = async () => {
-      setLoading(true);
+    if (!userId) return;
+
+    const q =
+      type === 'followers'
+        ? query(collection(db, 'followers'), where('followingId', '==', userId))
+        : type === 'following'
+          ? query(collection(db, 'followers'), where('followerId', '==', userId))
+          : query(collection(db, 'friendships'), where('users', 'array-contains', userId));
+
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
       try {
-        const q =
-          type === 'followers'
-            ? query(collection(db, 'followers'), where('followingId', '==', userId))
-            : type === 'following'
-              ? query(collection(db, 'followers'), where('followerId', '==', userId))
-              : query(collection(db, 'friendships'), where('users', 'array-contains', userId));
-
-        const snapshot = await getDocs(q);
-
         const userPromises = snapshot.docs.map(async (relationDoc) => {
           const data = relationDoc.data();
           if (type === 'friends' && data.status !== 'active') {
@@ -33,31 +32,24 @@ export function FollowersList({ userId, type }: { userId: string, type: 'followe
                 ? data.followingId
                 : (data.users || []).find((id: string) => id !== userId);
 
-          if (!targetId) {
-            return null;
-          }
+          if (!targetId) return null;
 
-          const userRef = doc(db, 'users', targetId);
-          const userSnap = await getDoc(userRef);
-          if (userSnap.exists()) {
-            return { id: userSnap.id, ...userSnap.data() };
-          }
-          return null;
+          const userSnap = await getDoc(doc(db, 'users', targetId));
+          return userSnap.exists() ? { id: userSnap.id, ...userSnap.data() } : null;
         });
-        
+
         const resolvedUsers = (await Promise.all(userPromises)).filter(Boolean);
         setUsers(resolvedUsers);
       } catch (error) {
-        console.error(`Error fetching ${type}:`, error);
+        console.error(`Error processing ${type} updates:`, error);
       } finally {
         setLoading(false);
       }
-    };
+    });
 
-    if (userId) {
-      fetchUsers();
-    }
+    return () => unsubscribe();
   }, [userId, type]);
+
 
   if (loading) {
     return <div className="text-muted-foreground text-[14px] py-2">Loading...</div>;

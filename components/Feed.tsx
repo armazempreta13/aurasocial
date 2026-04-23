@@ -1,69 +1,111 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { collection, query, orderBy, limit, getDocs, startAfter, QueryConstraint, QueryDocumentSnapshot, where, onSnapshot } from 'firebase/firestore';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { 
+  collection, 
+  query, 
+  orderBy, 
+  limit, 
+  getDocs, 
+  startAfter, 
+  QueryConstraint, 
+  QueryDocumentSnapshot, 
+  where, 
+  onSnapshot, 
+  getDoc,
+  doc
+} from 'firebase/firestore';
 import { db } from '@/firebase';
 import { PostCard } from './PostCard';
 import { useAppStore } from '@/lib/store';
-import { Sparkles, Clock, ThumbsUp, RefreshCw } from 'lucide-react';
+import { 
+  TrendingUp, 
+  Clock, 
+  ThumbsUp, 
+  RefreshCw, 
+  Sparkles, 
+  Users, 
+  Zap,
+  ChevronUp,
+  BookOpen
+} from 'lucide-react';
 import { PostSkeleton } from './PostSkeleton';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { getBlockedUserIds, getFriendIds } from '@/lib/friendships';
 import { useTranslation } from 'react-i18next';
 import { useInView } from 'react-intersection-observer';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { 
+  calculateRelevanceScore, 
+  calculateMomentum, 
+  FeedMode, 
+  UserPreferences 
+} from '@/lib/aura-brain';
+import { motion, AnimatePresence } from 'motion/react';
 
-// SYNC CHANNEL FOR MULTI-TAB CONSISTENCY
 const syncChannel = typeof window !== 'undefined' ? new BroadcastChannel('aura_feed_sync') : null;
-
 const PAGE_SIZE = 15;
+const FRESH_PRIORITY_MS = 30 * 60 * 1000; // newest posts win in ranking for ~30 minutes
 
-function matchesSearch(post: any, searchQuery: string) {
-  const normalizedQuery = searchQuery.trim().toLowerCase();
-  if (!normalizedQuery) return true;
-
-  const rawHashtags = Array.isArray(post.hashtags) ? post.hashtags : [];
-  const normalizedHashtags = rawHashtags
-    .map((tag: string) => tag.toLowerCase())
-    .map((tag: string) => (tag.startsWith('#') ? tag : `#${tag}`));
-
-  const searchableFields = [
-    post.content,
-    post.authorName,
-    post.communityName,
-    ...normalizedHashtags,
-  ]
-    .filter(Boolean)
-    .map((value) => String(value).toLowerCase());
-
-  return searchableFields.some((value) => value.includes(normalizedQuery));
+function getPostTimeMs(post: any) {
+  const createdAt = post?.createdAt;
+  if (!createdAt) return 0;
+  if (typeof createdAt === 'number') return createdAt;
+  if (typeof createdAt?.toMillis === 'function') return createdAt.toMillis();
+  if (typeof createdAt?.seconds === 'number') return createdAt.seconds * 1000;
+  if (typeof createdAt === 'string') {
+    const parsed = Date.parse(createdAt);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }
 
-function getSocialBoost(post: any, friendIds: Set<string>) {
-  let score = 0;
-  if (friendIds.has(post.authorId)) score += 3;
-  if (post.communityId && friendIds.has(post.authorId)) score += 1.5;
-  score += Math.min(post.likesCount || 0, 20) * 0.08;
-  score += Math.min(post.commentsCount || 0, 20) * 0.12;
-  score += Math.min(post.sharesCount || 0, 20) * 0.14;
-  return score;
-}
-
-export function Feed({ userId, communityId, type = 'posts', searchQuery }: { userId?: string, communityId?: string, type?: 'posts' | 'media' | 'likes', searchQuery?: string }) {
+export function Feed({ 
+  userId, 
+  communityId, 
+  type = 'posts', 
+  searchQuery,
+  pinnedPostIds
+}: { 
+  userId?: string, 
+  communityId?: string, 
+  type?: 'posts' | 'media' | 'likes', 
+  searchQuery?: string,
+  pinnedPostIds?: string[]
+}) {
   const { t } = useTranslation('common');
   const focusMode = useAppStore((state) => state.focusMode);
   const profile = useAppStore((state) => state.profile);
   const normalizedSearchQuery = searchQuery?.trim() || '';
   const pageSize = normalizedSearchQuery ? 50 : PAGE_SIZE;
+
   const [friendIds, setFriendIds] = useState<Set<string>>(new Set());
   const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
+  const [feedMode, setFeedMode] = useState<FeedMode>('for_you');
+  const [newPostsAvailable, setNewPostsAvailable] = useState<string[]>([]);
+  
+  const parentRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
 
+  // 🏆 PRIORITY 6: Explicitly fetch pinned posts to ensure they appear regardless of their creation date
+  const { data: pinnedPostsData } = useQuery({
+    queryKey: ['pinned_posts', pinnedPostIds],
+    queryFn: async () => {
+      if (!pinnedPostIds || pinnedPostIds.length === 0) return [];
+      // Firestore 'in' query or individual gets depending on size
+      const snapshots = await Promise.all(
+        pinnedPostIds.map(id => getDoc(doc(db, 'posts', id)))
+      );
+      return snapshots.filter(s => s.exists()).map(s => ({ id: s.id, ...s.data() }));
+    },
+    enabled: !!pinnedPostIds && pinnedPostIds.length > 0,
+    staleTime: 1000 * 60 * 5 // 5 minutes
+  });
+
+  // Load social signals for ranking
   useEffect(() => {
     if (!profile?.uid) return;
-
-    const loadRelationshipSignals = async () => {
-      // ADDITIONAL SECURITY GUARD: Ensure project ID is confirmed and user is logically logged in
-      if (!profile?.uid) return;
-      
+    const loadSignals = async () => {
       try {
         const [friends, blocked] = await Promise.all([
           getFriendIds(profile.uid),
@@ -71,18 +113,15 @@ export function Feed({ userId, communityId, type = 'posts', searchQuery }: { use
         ]);
         setFriendIds(new Set(friends));
         setBlockedUserIds(blocked);
-      } catch (error) {
-        console.error('Error loading relationship signals:', error);
-        // Fallback to empty sets if permissions fail
-        setFriendIds(new Set());
-        setBlockedUserIds(new Set());
+      } catch (e) {
+        console.warn('Relationship signal fetch failed:', e);
       }
     };
-
-    void loadRelationshipSignals();
+    loadSignals();
   }, [profile?.uid]);
 
   const fetchPosts = useCallback(async ({ pageParam }: { pageParam: QueryDocumentSnapshot | null }) => {
+    // Special case for 'likes' tab
     if (type === 'likes') {
       const likesQ = query(
         collection(db, 'likes'),
@@ -91,54 +130,115 @@ export function Feed({ userId, communityId, type = 'posts', searchQuery }: { use
         orderBy('createdAt', 'desc'),
         limit(pageSize)
       );
-      if (pageParam) {
-        // startAfter for likes query
-      }
       const likesSnapshot = await getDocs(likesQ);
-      const postIds = likesSnapshot.docs.map(doc => doc.data().postId);
-      
+      const postIds = likesSnapshot.docs.map((d) => d.data().postId).filter(Boolean);
       if (postIds.length === 0) return { docs: [] } as any;
 
-      const postsQ = query(collection(db, 'posts'), where('__name__', 'in', postIds));
-      const postsSnapshot = await getDocs(postsQ);
-      return postsSnapshot;
+      // Firestore "in" queries have a small limit. Chunk and preserve ordering by likes recency.
+      const chunks: string[][] = [];
+      for (let i = 0; i < postIds.length; i += 10) chunks.push(postIds.slice(i, i + 10));
+
+      const snapshots = await Promise.all(
+        chunks.map((ids) => getDocs(query(collection(db, 'posts'), where('__name__', 'in', ids))))
+      );
+
+      const byId = new Map<string, any>();
+      snapshots.forEach((snap) => snap.docs.forEach((d: any) => byId.set(d.id, d)));
+      const orderedDocs = postIds.map((id) => byId.get(id)).filter(Boolean);
+
+      return { docs: orderedDocs } as any;
     }
 
     const constraints: QueryConstraint[] = [];
-
     if (userId) {
       constraints.push(where('authorId', '==', userId));
-      if (type === 'media') {
-        constraints.push(where('hasImage', '==', true));
-      }
+      // Don't constrain media on the server (would exclude videos). We'll filter client-side.
     } else if (communityId) {
       constraints.push(where('communityId', '==', communityId));
     }
-
+    
+    // Default discovery constraints
     constraints.push(orderBy('createdAt', 'desc'));
-
-    if (pageParam) {
-      constraints.push(startAfter(pageParam));
-    }
-
+    if (pageParam) constraints.push(startAfter(pageParam));
     constraints.push(limit(pageSize));
 
     const q = query(collection(db, 'posts'), ...constraints);
-    const snapshot = await getDocs(q);
-    return snapshot;
-  }, [communityId, pageSize, userId]);
-
-  const [feedType, setFeedType] = useState<'all' | 'top' | 'trending'>('trending');
-
-  const { ref, inView } = useInView();
+    return await getDocs(q);
+  }, [communityId, pageSize, userId, type, profile?.uid]);
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, status } = useInfiniteQuery({
-    queryKey: ['posts', userId, communityId, type || feedType, normalizedSearchQuery],
+    queryKey: ['posts', userId, communityId, type, feedMode, normalizedSearchQuery],
     queryFn: fetchPosts,
     initialPageParam: null as QueryDocumentSnapshot | null,
     getNextPageParam: (lastPage) => lastPage.docs.length === pageSize ? lastPage.docs[lastPage.docs.length - 1] : null,
-    staleTime: 2 * 60 * 1000,
+    staleTime: 5 * 60 * 1000,
   });
+
+  const allPosts = useMemo(() => {
+    const raw = data?.pages.flatMap(page => page.docs.map((d: any) => ({ id: d.id, ...d.data() }))) || [];
+    
+    // 🔗 MERGE & DEDUPLICATE: Ensure pinned posts are present even if not in first page results
+    const combined = [...(pinnedPostsData || []), ...raw];
+    const uniqueMap = new Map();
+    combined.forEach(p => uniqueMap.set(p.id, p));
+    
+    const userPrefs: UserPreferences = {
+      friendIds,
+      interests: (profile as any)?.interests || [],
+      blockedUserIds,
+      uid: profile?.uid
+    };
+    const now = Date.now();
+
+    const filtered = Array.from(uniqueMap.values())
+      .filter((post: any) => !String(post?.id || '').startsWith('optimistic_'))
+      .filter((post: any) => {
+        if (!post.authorId || (!post.content && !post.imageUrl && !post.videoUrl)) return false;
+        if (blockedUserIds.has(post.authorId)) return false;
+        if (post.visibility === 'friends' && post.authorId !== profile?.uid && !friendIds.has(post.authorId)) return false;
+        if (type === 'media' && !(post.imageUrl || post.videoUrl || post.hasImage || post.hasVideo)) return false;
+        return true;
+      });
+
+    // 🏆 PARTITION: Divide into Pinned (Top) and Normal (Stream)
+    const pinnedIdsSet = new Set(pinnedPostIds || []);
+    const pinned = filtered.filter(p => pinnedIdsSet.has(p.id))
+      .sort((a, b) => (pinnedPostIds?.indexOf(a.id) || 0) - (pinnedPostIds?.indexOf(b.id) || 0));
+    const normal = filtered.filter(p => !pinnedIdsSet.has(p.id));
+
+    const sortFn = (posts: any[]) => {
+      return [...posts].sort((a: any, b: any) => {
+        const aTime = getPostTimeMs(a);
+        const bTime = getPostTimeMs(b);
+        const aFresh = aTime > 0 && (now - aTime) <= FRESH_PRIORITY_MS;
+        const bFresh = bTime > 0 && (now - bTime) <= FRESH_PRIORITY_MS;
+        if (aFresh !== bFresh) return bFresh ? 1 : -1;
+        if (aFresh && bFresh && aTime !== bTime) return bTime - aTime;
+
+        if (feedMode === 'recent') return bTime - aTime;
+        if (feedMode === 'top') return (b.likesCount || 0) - (a.likesCount || 0);
+        if (feedMode === 'trending') return calculateMomentum(b, now) - calculateMomentum(a, now);
+        if (feedMode === 'deep') {
+           const aDepth = (a.content?.length || 0) + (a.commentsCount * 50);
+           const bDepth = (b.content?.length || 0) + (b.commentsCount * 50);
+           return bDepth - aDepth;
+        }
+        return calculateRelevanceScore(b, userPrefs, now) - calculateRelevanceScore(a, userPrefs, now);
+      });
+    };
+
+    return [...pinned, ...sortFn(normal)];
+  }, [data, pinnedPostsData, pinnedPostIds, friendIds, blockedUserIds, profile, feedMode, type]);
+
+  // Virtualization for extreme performance
+  const rowVirtualizer = useVirtualizer({
+    count: allPosts.length,
+    getScrollElement: () => typeof document !== 'undefined' ? document.documentElement : null,
+    estimateSize: () => 600,
+    overscan: 5,
+  });
+
+  const { ref: loadMoreRef, inView } = useInView({ threshold: 0.1 });
 
   useEffect(() => {
     if (inView && hasNextPage && !isFetchingNextPage) {
@@ -146,213 +246,161 @@ export function Feed({ userId, communityId, type = 'posts', searchQuery }: { use
     }
   }, [inView, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  const allPosts = useMemo(
-    () => {
-      const posts = data?.pages.flatMap((page) => page.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }))) || [];
-      
-      // 1. ADVANCED DEDUPLICATION & RECONCILIATION
-      // We prioritize server data but preserve local state to avoid "jumping"
-      const postMap = new Map();
-      posts.forEach(p => {
-        const existing = postMap.get(p.id);
-        // If we have a duplicate, we prefer the one that has a server timestamp
-        if (!existing || (!existing.createdAt?.toDate && p.createdAt?.toDate)) {
-          postMap.set(p.id, p);
-        }
-      });
-      const uniquePosts = Array.from(postMap.values());
-
-      // 2. SOCIAL BRAIN 2.0 - INTEGRITY & FILTERING
-      const visiblePosts = uniquePosts.filter((post: any) => {
-        // Robustness: Ignore corrupted or incomplete posts
-        if (!post.authorId || (!post.content && !post.imageUrl)) return false;
-        
-        if (blockedUserIds.has(post.authorId)) return false;
-        if (post.visibility === 'friends' && post.authorId !== profile?.uid && !friendIds.has(post.authorId)) {
-          return false;
-        }
-        return normalizedSearchQuery ? matchesSearch(post, normalizedSearchQuery) : true;
-      });
-
-      // 3. SOCIAL BRAIN 2.0 - ADVANCED RANKING (LOGARITHMIC DECAY)
-      const sorted = [...visiblePosts].sort((a: any, b: any) => {
-        const now = Date.now();
-        
-        const getTimestamp = (p: any) => {
-           if (p.createdAt?.toDate) return p.createdAt.toDate().getTime();
-           if (typeof p.createdAt === 'number') return p.createdAt;
-           return now;
-        };
-
-        const aTime = getTimestamp(a);
-        const bTime = getTimestamp(b);
-        
-        // Hours since creation (min 0.1 to avoid infinity)
-        const aHours = Math.max(0.1, (now - aTime) / (1000 * 60 * 60));
-        const bHours = Math.max(0.1, (now - bTime) / (1000 * 60 * 60));
-
-        // Ranking Weights
-        const getBaseScore = (p: any) => {
-          let s = (p.likesCount || 0) * 2 + (p.commentsCount || 0) * 5 + (p.sharesCount || 0) * 8;
-          
-          // AFFINITY BOOST (Amigos próximos/Amigos)
-          if (friendIds.has(p.authorId)) s += 30;
-          
-          // MEDIA WEIGHT (Posts com imagem/vídeo engajam mais visualmente)
-          if (p.hasImage) s += 10;
-          
-          // OPTIMISTIC INJECTION (Instant visibility)
-          if (p._isOptimistic) s += 2000;
-          
-          return s;
-        };
-
-        // Score with Logarithmic/Exponential Hybrid Decay
-        const aScore = getBaseScore(a) / Math.pow(aHours + 2, 1.8);
-        const bScore = getBaseScore(b) / Math.pow(bHours + 2, 1.8);
-
-        return bScore - aScore;
-      });
-
-      // 4. ANTI-CLUSTERING (Post Diversity UX)
-      // Prevent showing 3+ posts from the same author in a row
-      const finalPosts: any[] = [];
-      const authorStreak: Record<string, number> = {};
-      
-      sorted.forEach(post => {
-        const authorId = post.authorId;
-        authorStreak[authorId] = (authorStreak[authorId] || 0) + 1;
-        
-        if (authorStreak[authorId] <= 2) {
-          finalPosts.push(post);
-        } else {
-          // Push to the end of the next page essentially
-          // For simplicity in this render, we just capping for now
-          // A more advanced version would re-inject them lower down
-        }
-      });
-
-      return finalPosts;
-    },
-    [blockedUserIds, data, friendIds, normalizedSearchQuery, profile?.uid, type]
-  );
-
-  const [newPostsAvailable, setNewPostsAvailable] = useState<string[]>([]);
-  const queryClient = useQueryClient();
-
-  // MULTI-TAB SYNC ENGINE
+  // Real-time Incremental Update Engine
   useEffect(() => {
-    if (!syncChannel) return;
-    const handleSync = (event: MessageEvent) => {
-      const { type: syncType } = event.data;
-      if (syncType === 'invalidate_posts') {
-         queryClient.invalidateQueries({ queryKey: ['posts'] });
-      }
-    };
-    syncChannel.addEventListener('message', handleSync);
-    return () => syncChannel.removeEventListener('message', handleSync);
-  }, [queryClient]);
+    if (normalizedSearchQuery) return;
+    
+    // Determine the relevant filter for the real-time listener
+    const constraints: any[] = [orderBy('createdAt', 'desc'), limit(1)];
+    
+    if (communityId) {
+      constraints.push(where('communityId', '==', communityId));
+    } else if (userId) {
+      constraints.push(where('authorId', '==', userId));
+    } else if (feedMode === 'recent') {
+      constraints.push(where('visibility', '==', 'public'));
+    } else {
+      // For ranking modes like for_you/trending, we don't show the real-time banner 
+      // as the order is complex and non-chronological.
+      return;
+    }
 
-  useEffect(() => {
-    if (userId || communityId || normalizedSearchQuery) return;
-
-    const q = query(
-      collection(db, 'posts'),
-      where('visibility', '==', 'public'),
-      orderBy('createdAt', 'desc'),
-      limit(1)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (snapshot.empty) return;
-      const latestPostId = snapshot.docs[0].id;
+    const q = query(collection(db, 'posts'), ...constraints);
+    
+    return onSnapshot(q, (snap) => {
+      if (snap.empty) return;
+      const latestId = snap.docs[0].id;
+      const exists = allPosts.some(p => p.id === latestId);
       
-      const existingPosts = data?.pages.flatMap(p => p.docs.map((d: any) => d.id)) || [];
-      if (!existingPosts.includes(latestPostId) && status === 'success' && existingPosts.length > 0) {
-        setNewPostsAvailable(prev => Array.from(new Set([...prev, latestPostId])));
+      if (!exists && status === 'success' && allPosts.length > 0) {
+        setNewPostsAvailable(prev => Array.from(new Set([...prev, latestId])));
       }
     });
+  }, [allPosts, userId, communityId, normalizedSearchQuery, feedMode, status]);
 
-    return () => unsubscribe();
-  }, [data, userId, communityId, normalizedSearchQuery, status]);
-
-  const handleRefreshFeed = () => {
+  const refreshFeed = () => {
     setNewPostsAvailable([]);
     queryClient.invalidateQueries({ queryKey: ['posts'] });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   if (status === 'pending') {
-    return (
-      <div className="flex flex-col gap-6">
-        {[1, 2, 3].map((i) => (
-          <PostSkeleton key={i} />
-        ))}
-      </div>
-    );
+    return <div className="flex flex-col gap-6"><PostSkeleton /><PostSkeleton /></div>;
   }
 
+  const TABS = [
+    { id: 'for_you', label: 'Descobertas', icon: Sparkles },
+    { id: 'trending', label: 'Bombando', icon: Zap },
+    { id: 'recent', label: 'Recentes', icon: Clock },
+    { id: 'social', label: 'Círculo', icon: Users },
+    { id: 'deep', label: 'Foco Total', icon: BookOpen },
+  ];
+
   return (
-    <div className="w-full">
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-8 sticky top-[72px] z-30 bg-[#f7f7f9]/80 backdrop-blur-3xl py-6 -mx-2 px-2 border-b border-slate-200/50">
-        <div className="flex items-center gap-2 bg-[#eaeffa] p-1.5 rounded-[26px] border border-white shadow-[0_8px_20px_rgba(0,0,0,0.03)] backdrop-blur-xl">
-          {[
-            { id: 'all', label: t('feed.new', 'New'), icon: Clock },
-            { id: 'trending', label: t('feed.trending', 'Trending'), icon: Sparkles },
-            { id: 'top', label: t('feed.top', 'Top'), icon: ThumbsUp },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = (type || feedType) === tab.id || (tab.id === 'all' && !(type || feedType));
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setFeedType(tab.id as any)} 
-                className={`flex items-center gap-2.5 px-6 py-2.5 rounded-[22px] text-[13.5px] font-black transition-all duration-300 ${isActive ? 'bg-white text-[#7a63f1] shadow-[0_10px_25px_rgba(122,99,241,0.15)] scale-[1.05] translate-y-[-1px]' : 'text-slate-500 hover:text-[#7a63f1] hover:bg-white/60'}`}
-              >
-                <Icon className={`w-4 h-4 ${isActive ? 'fill-[#7a63f1]/20' : ''}`} />
-                {tab.label}
-              </button>
-            );
-          })}
+    <div className="w-full max-w-2xl mx-auto px-1 sm:px-0">
+      {/* Navigation Layer */}
+      <div className="sticky top-0 z-40 bg-white/70 backdrop-blur-2xl border-b border-slate-100/50 flex items-center justify-between px-6 py-4 overflow-hidden mb-6 rounded-b-[2rem] shadow-sm shadow-slate-200/20">
+        <div className="flex gap-1 overflow-x-auto no-scrollbar scroll-smooth flex-1 items-center">
+          <style jsx>{`
+            .no-scrollbar::-webkit-scrollbar { display: none; }
+            .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+          `}</style>
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              const active = feedMode === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setFeedMode(tab.id as any)}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-[11px] font-ex-bold transition-all duration-300 relative whitespace-nowrap ${
+                    active 
+                      ? 'bg-primary/10 text-primary scale-105' 
+                      : 'text-slate-400 hover:bg-slate-50'
+                  }`}
+                >
+                  <Icon className={`w-3.5 h-3.5 ${active ? 'fill-primary/20' : ''}`} />
+                  <span className="tracking-widest uppercase">{tab.label}</span>
+                  {active && (
+                    <motion.div 
+                      layoutId="activeTab" 
+                      className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(122,99,241,0.5)]" 
+                    />
+                  )}
+                </button>
+              );
+            })}
         </div>
-        
-        {!focusMode && !userId && (
-          <div className="hidden sm:flex items-center gap-2.5 text-[12.5px] font-black text-[#7a63f1] bg-[#7a63f1]/5 px-6 py-2.5 rounded-[22px] border border-[#7a63f1]/20 shadow-[0_10px_30px_rgba(122,99,241,0.08)] transition-all hover:bg-[#7a63f1]/10 group cursor-default">
-            <Sparkles className="w-4.5 h-4.5 text-[#7a63f1] group-hover:animate-pulse" />
-            <span className="tracking-tight uppercase">{t('feed.personal_tip', 'Para Você')}</span>
+      </div>
+
+      {/* Real-time Injection Banner */}
+      <AnimatePresence>
+        {newPostsAvailable.length > 0 && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.9 }}
+            className="fixed top-28 left-1/2 -translate-x-1/2 z-[60]"
+          >
+            <button 
+              onClick={refreshFeed}
+              className="px-6 py-3 bg-primary text-white rounded-full shadow-2xl shadow-primary/40 font-black text-[13px] flex items-center gap-3 border border-white/20 backdrop-blur-md hover:scale-105 active:scale-95 transition-all group"
+            >
+              <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-700" />
+                <span className="text-xs font-bold text-white">
+                  {newPostsAvailable.length} {newPostsAvailable.length === 1 ? 'nova ideia' : 'novas ideias'}
+                </span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Main Stream (Virtualized) */}
+      <div 
+        style={{ 
+          height: `${rowVirtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative'
+        }}
+      >
+        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+          const post = allPosts[virtualRow.index];
+          return (
+            <div
+              key={post.id}
+              data-index={virtualRow.index}
+              ref={(el) => {
+                if (el) rowVirtualizer.measureElement(el);
+              }}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualRow.start}px)`,
+                paddingBottom: '24px'
+              }}
+            >
+              <PostCard post={post} isPinned={pinnedPostIds?.includes(post.id)} />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Infinite Loading Indicator */}
+      <div ref={loadMoreRef} className="py-20 flex flex-col items-center gap-4 text-slate-400">
+        {!hasNextPage && allPosts.length > 0 ? (
+          <div className="flex flex-col items-center gap-2">
+            <Sparkles className="w-6 h-6 opacity-20" />
+            <span className="text-[10px] font-black uppercase tracking-[0.2em]">Você encontrou o que procurava.</span>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <div className="w-2 h-2 rounded-full bg-primary/30 animate-bounce" />
+            <div className="w-2 h-2 rounded-full bg-primary/30 animate-bounce delay-75" />
+            <div className="w-2 h-2 rounded-full bg-primary/30 animate-bounce delay-150" />
           </div>
         )}
       </div>
-      
-      {/* Floating Fresh Content Notification */}
-      {newPostsAvailable.length > 0 && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-40 animate-in fade-in slide-in-from-top-4 duration-500">
-          <button 
-            onClick={handleRefreshFeed}
-            className="bg-primary text-white px-6 py-2.5 rounded-full shadow-2xl shadow-primary/40 font-black text-[14px] flex items-center gap-2 hover:scale-105 active:scale-95 transition-all border border-white/20 backdrop-blur-md"
-          >
-            <RefreshCw className="w-4 h-4 animate-spin-slow" />
-            {newPostsAvailable.length} {newPostsAvailable.length === 1 ? t('feed.new_post_available', 'new post available') : t('feed.new_posts_available', 'new posts available')}
-          </button>
-        </div>
-      )}
-
-      <div className="flex flex-col gap-10">
-        {allPosts.map((post, idx) => (
-          <div key={post.id} className="animate-in fade-in slide-in-from-bottom-2 duration-500" style={{ animationDelay: `${Math.min(idx * 50, 400)}ms` }}>
-            <PostCard post={post} />
-          </div>
-        ))}
-      </div>
-      
-      {hasNextPage && (
-        <div ref={ref} className="py-12 flex items-center justify-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.3s]" />
-          <div className="w-2 h-2 rounded-full bg-primary/40 animate-bounce [animation-delay:-0.15s]" />
-          <div className="w-2 h-2 rounded-full bg-primary/40 animate-bounce" />
-          <span className="sr-only">Loading more...</span>
-        </div>
-      )}
     </div>
   );
 }

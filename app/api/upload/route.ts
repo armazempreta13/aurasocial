@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-
+import { verifyFirebaseIdToken } from '@/lib/server/firebase-auth';
 
 export async function POST(request: Request) {
   try {
-    const authHeader = request.headers.get('Authorization');
-    
-    // On Cloudflare, we don't have a filesystem, so we must rely on external services like ImgBB
+    const auth = await verifyFirebaseIdToken(request.headers);
+    if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const formData = await request.formData();
     const image = formData.get('image');
 
@@ -15,10 +15,10 @@ export async function POST(request: Request) {
 
     const apiKey = process.env.IMGBB_API_KEY;
     
-    if (!apiKey) {
-      console.error('IMGBB_API_KEY is not set in environment variables');
+    if (!apiKey || apiKey === 'YOUR_IMGBB_API_KEY') {
+      console.error('IMGBB_API_KEY is not configured');
       return NextResponse.json(
-        { error: 'Server configuration error. IMGBB_API_KEY is required for production uploads.' },
+        { error: 'Server configuration error. ImgBB API Key is missing.' },
         { status: 500 }
       );
     }

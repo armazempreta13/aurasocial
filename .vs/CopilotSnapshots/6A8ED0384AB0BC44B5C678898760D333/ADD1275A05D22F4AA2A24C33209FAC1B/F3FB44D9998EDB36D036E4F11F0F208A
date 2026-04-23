@@ -1,0 +1,20 @@
+﻿// Core
+export { getBotManager, resetBotManager } from './core/bot-manager';
+export { getBotEngine, resetBotEngine } from './core/bot-engine';
+export { getBehaviorEngine } from './core/behavior-engine';
+
+// Storage
+export { getBotStorage, resetBotStorage } from './storage/bot-storage';
+
+// Monitoring
+export { getBotMonitor, resetBotMonitor } from './monitoring/bot-monitor';
+
+// Generators
+export { generatePost, isSimilarContent } from './generators/post-generator';
+export { generateComment, shouldGenerateComment, isCommentContextAppropriate } from './generators/comment-generator';
+export { generateBotName, generateBotAvatar, generateBotPersona, generateBotId } from './generators/name-generator';
+
+// Types
+export type { BotUser, BotGeneratedPost, BotGeneratedComment, BotMetrics, BotActivityLog, BotPersona, BotActivityLevel } from './models/bot.types';
+export type { BotSystemConfig, ActivityLevel } from './models/bot-config.types';
+export { DEFAULT_BOT_CONFIG, ACTIVITY_LEVEL_MULTIPLIERS } from './models/bot-config.types';

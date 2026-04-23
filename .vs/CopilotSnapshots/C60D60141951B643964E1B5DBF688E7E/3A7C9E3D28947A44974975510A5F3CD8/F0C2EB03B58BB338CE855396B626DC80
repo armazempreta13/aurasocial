@@ -1,0 +1,318 @@
+﻿'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { 
+  collection, 
+  query, 
+  orderBy, 
+  limit, 
+  getDocs, 
+  startAfter, 
+  QueryConstraint, 
+  QueryDocumentSnapshot, 
+  where, 
+  onSnapshot 
+} from 'firebase/firestore';
+import { db } from '@/firebase';
+import { PostCard } from './PostCard';
+import { useAppStore } from '@/lib/store';
+import { 
+  TrendingUp, 
+  Clock, 
+  ThumbsUp, 
+  RefreshCw, 
+  Sparkles, 
+  Users, 
+  Zap,
+  ChevronUp,
+  BookOpen
+} from 'lucide-react';
+import { PostSkeleton } from './PostSkeleton';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { getBlockedUserIds, getFriendIds } from '@/lib/friendships';
+import { useTranslation } from 'react-i18next';
+import { useInView } from 'react-intersection-observer';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { 
+  calculateRelevanceScore, 
+  calculateMomentum, 
+  FeedMode, 
+  UserPreferences 
+} from '@/lib/aura-brain';
+import { motion, AnimatePresence } from 'motion/react';
+
+const syncChannel = typeof window !== 'undefined' ? new BroadcastChannel('aura_feed_sync') : null;
+const PAGE_SIZE = 5; // Reduzido para economizar cota
+
+export function Feed({ userId, communityId, type = 'posts', searchQuery }: { userId?: string, communityId?: string, type?: 'posts' | 'media' | 'likes', searchQuery?: string }) {
+  const { t } = useTranslation('common');
+  const focusMode = useAppStore((state) => state.focusMode);
+  const profile = useAppStore((state) => state.profile);
+  const normalizedSearchQuery = searchQuery?.trim() || '';
+  const pageSize = normalizedSearchQuery ? 20 : PAGE_SIZE; // Reduzido
+
+  const [friendIds, setFriendIds] = useState<Set<string>>(new Set());
+  const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
+  const [feedMode, setFeedMode] = useState<FeedMode>('for_you');
+  const [newPostsAvailable, setNewPostsAvailable] = useState<string[]>([]);
+  
+  const parentRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+
+  // Load social signals for ranking
+  useEffect(() => {
+    if (!profile?.uid) return;
+    const loadSignals = async () => {
+      try {
+        const [friends, blocked] = await Promise.all([
+          getFriendIds(profile.uid),
+          getBlockedUserIds(profile.uid),
+        ]);
+        setFriendIds(new Set(friends));
+        setBlockedUserIds(blocked);
+      } catch (e) {
+        console.warn('Relationship signal fetch failed:', e);
+      }
+    };
+    loadSignals();
+  }, [profile?.uid]);
+
+  const fetchPosts = useCallback(async ({ pageParam }: { pageParam: QueryDocumentSnapshot | null }) => {
+    // Special case for 'likes' tab
+    if (type === 'likes') {
+      const likesQ = query(
+        collection(db, 'likes'),
+        where('userId', '==', userId || profile?.uid),
+        where('commentId', '==', null),
+        orderBy('createdAt', 'desc'),
+        limit(pageSize)
+      );
+      const likesSnapshot = await getDocs(likesQ);
+      const postIds = likesSnapshot.docs.map(doc => doc.data().postId);
+      if (postIds.length === 0) return { docs: [] } as any;
+      const postsQ = query(collection(db, 'posts'), where('__name__', 'in', postIds));
+      return await getDocs(postsQ);
+    }
+
+    const constraints: QueryConstraint[] = [];
+    if (userId) {
+      constraints.push(where('authorId', '==', userId));
+      if (type === 'media') constraints.push(where('hasImage', '==', true));
+    } else if (communityId) {
+      constraints.push(where('communityId', '==', communityId));
+    }
+    
+    // Default discovery constraints
+    constraints.push(orderBy('createdAt', 'desc'));
+    if (pageParam) constraints.push(startAfter(pageParam));
+    constraints.push(limit(pageSize));
+
+    const q = query(collection(db, 'posts'), ...constraints);
+    return await getDocs(q);
+  }, [communityId, pageSize, userId, type, profile?.uid]);
+
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, status } = useInfiniteQuery({
+    queryKey: ['posts', userId, communityId, type, feedMode, normalizedSearchQuery],
+    queryFn: fetchPosts,
+    initialPageParam: null as QueryDocumentSnapshot | null,
+    getNextPageParam: (lastPage) => lastPage.docs.length === pageSize ? lastPage.docs[lastPage.docs.length - 1] : null,
+    staleTime: 30 * 60 * 1000, // 30 minutos
+  });
+
+  const allPosts = useMemo(() => {
+    const raw = data?.pages.flatMap(page => page.docs.map((d: any) => ({ id: d.id, ...d.data() }))) || [];
+    const userPrefs: UserPreferences = {
+      friendIds,
+      interests: (profile as any)?.interests || [],
+      blockedUserIds,
+      uid: profile?.uid
+    };
+    const now = Date.now();
+
+    return raw
+      .filter((post: any) => {
+        if (!post.authorId || (!post.content && !post.imageUrl)) return false;
+        if (blockedUserIds.has(post.authorId)) return false;
+        if (post.visibility === 'friends' && post.authorId !== profile?.uid && !friendIds.has(post.authorId)) return false;
+        return true;
+      })
+      .sort((a: any, b: any) => {
+        if (feedMode === 'recent') {
+          const aTime = a.createdAt?.toMillis?.() || Date.now();
+          const bTime = b.createdAt?.toMillis?.() || Date.now();
+          return bTime - aTime;
+        }
+        if (feedMode === 'top') {
+          return (b.likesCount || 0) - (a.likesCount || 0);
+        }
+        if (feedMode === 'trending') {
+          return calculateMomentum(b, now) - calculateMomentum(a, now);
+        }
+        if (feedMode === 'deep') {
+           // Priorizar conteúdo longo (Insightful density)
+           const aDepth = (a.content?.length || 0) + (a.commentsCount * 50);
+           const bDepth = (b.content?.length || 0) + (b.commentsCount * 50);
+           return bDepth - aDepth;
+        }
+        // Discovery / For You modes
+        return calculateRelevanceScore(b, userPrefs, now) - calculateRelevanceScore(a, userPrefs, now);
+      });
+  }, [data, friendIds, blockedUserIds, profile, feedMode]);
+
+  // Virtualization for extreme performance
+  const rowVirtualizer = useVirtualizer({
+    count: allPosts.length,
+    getScrollElement: () => typeof document !== 'undefined' ? document.documentElement : null,
+    estimateSize: () => 600,
+    overscan: 5,
+  });
+
+  const { ref: loadMoreRef, inView } = useInView({ threshold: 0.1 });
+
+  useEffect(() => {
+    if (inView && hasNextPage && !isFetchingNextPage) {
+      void fetchNextPage();
+    }
+  }, [inView, hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  // Real-time Incremental Update Engine
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'production') return;
+    if (userId || communityId || normalizedSearchQuery || feedMode !== 'recent') return;
+    const q = query(collection(db, 'posts'), where('visibility', '==', 'public'), orderBy('createdAt', 'desc'), limit(1));
+    return onSnapshot(q, (snap) => {
+      if (snap.empty) return;
+      const latestId = snap.docs[0].id;
+      const exists = allPosts.some(p => p.id === latestId);
+      if (!exists && status === 'success' && allPosts.length > 0) {
+        setNewPostsAvailable(prev => Array.from(new Set([...prev, latestId])));
+      }
+    });
+  }, [allPosts, userId, communityId, normalizedSearchQuery, feedMode, status]);
+
+  const refreshFeed = () => {
+    setNewPostsAvailable([]);
+    queryClient.invalidateQueries({ queryKey: ['posts'] });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  if (status === 'pending') {
+    return <div className="flex flex-col gap-6"><PostSkeleton /><PostSkeleton /></div>;
+  }
+
+  const TABS = [
+    { id: 'for_you', label: 'Descobertas', icon: Sparkles },
+    { id: 'trending', label: 'Bombando', icon: Zap },
+    { id: 'recent', label: 'Recentes', icon: Clock },
+    { id: 'social', label: 'Círculo', icon: Users },
+    { id: 'deep', label: 'Foco Total', icon: BookOpen },
+  ];
+
+  return (
+    <div className="w-full max-w-2xl mx-auto px-1 sm:px-0">
+      {/* Navigation Layer */}
+      <div className="sticky top-0 z-40 bg-white/70 backdrop-blur-2xl border-b border-slate-100/50 flex items-center justify-between px-6 py-4 overflow-hidden mb-6 rounded-b-[2rem] shadow-sm shadow-slate-200/20">
+        <div className="flex gap-1 overflow-x-auto no-scrollbar scroll-smooth flex-1 items-center">
+          <style jsx>{`
+            .no-scrollbar::-webkit-scrollbar { display: none; }
+            .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+          `}</style>
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              const active = feedMode === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setFeedMode(tab.id as any)}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-[11px] font-ex-bold transition-all duration-300 relative whitespace-nowrap ${
+                    active 
+                      ? 'bg-primary/10 text-primary scale-105' 
+                      : 'text-slate-400 hover:bg-slate-50'
+                  }`}
+                >
+                  <Icon className={`w-3.5 h-3.5 ${active ? 'fill-primary/20' : ''}`} />
+                  <span className="tracking-widest uppercase">{tab.label}</span>
+                  {active && (
+                    <motion.div 
+                      layoutId="activeTab" 
+                      className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(122,99,241,0.5)]" 
+                    />
+                  )}
+                </button>
+              );
+            })}
+        </div>
+      </div>
+
+      {/* Real-time Injection Banner */}
+      <AnimatePresence>
+        {newPostsAvailable.length > 0 && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.9 }}
+            className="fixed top-28 left-1/2 -translate-x-1/2 z-[60]"
+          >
+            <button 
+              onClick={refreshFeed}
+              className="px-6 py-3 bg-primary text-white rounded-full shadow-2xl shadow-primary/40 font-black text-[13px] flex items-center gap-3 border border-white/20 backdrop-blur-md hover:scale-105 active:scale-95 transition-all group"
+            >
+              <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-700" />
+                <span className="text-xs font-bold text-white">
+                  {newPostsAvailable.length} {newPostsAvailable.length === 1 ? 'nova ideia' : 'novas ideias'}
+                </span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Main Stream (Virtualized) */}
+      <div 
+        style={{ 
+          height: `${rowVirtualizer.getTotalSize()}px`,
+          width: '100%',
+          position: 'relative'
+        }}
+      >
+        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+          const post = allPosts[virtualRow.index];
+          return (
+            <div
+              key={post.id}
+              data-index={virtualRow.index}
+              ref={(el) => {
+                if (el) rowVirtualizer.measureElement(el);
+              }}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualRow.start}px)`,
+                paddingBottom: '24px'
+              }}
+            >
+              <PostCard post={post} />
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Infinite Loading Indicator */}
+      <div ref={loadMoreRef} className="py-20 flex flex-col items-center gap-4 text-slate-400">
+        {!hasNextPage && allPosts.length > 0 ? (
+          <div className="flex flex-col items-center gap-2">
+            <Sparkles className="w-6 h-6 opacity-20" />
+            <span className="text-[10px] font-black uppercase tracking-[0.2em]">Você encontrou o que procurava.</span>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <div className="w-2 h-2 rounded-full bg-primary/30 animate-bounce" />
+            <div className="w-2 h-2 rounded-full bg-primary/30 animate-bounce delay-75" />
+            <div className="w-2 h-2 rounded-full bg-primary/30 animate-bounce delay-150" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

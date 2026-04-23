@@ -1,0 +1,60 @@
+﻿export type BotPersona = 'casual' | 'opinativo' | 'observador' | 'engajador';
+export type BotActivityLevel = 'low' | 'medium' | 'high';
+
+export interface BotUser {
+  id: string;
+  name: string;
+  avatar: string;
+  isBot: true;
+  persona: BotPersona;
+  activityLevel: BotActivityLevel;
+  createdAt: number;
+  lastActivityAt: number;
+}
+
+export interface BotGeneratedPost {
+  id: string;
+  botId: string;
+  content: string;
+  type: 'thought' | 'question' | 'opinion' | 'update';
+  createdAt: number;
+  generatedContentHash: string;
+  image?: {
+    url: string;
+    prompt: string;
+    alt: string;
+  };
+}
+
+export interface BotGeneratedComment {
+  id: string;
+  postId: string;
+  botId: string;
+  content: string;
+  type: 'agreement' | 'disagreement' | 'reflection' | 'short-reply';
+  createdAt: number;
+}
+
+export interface BotMetrics {
+  totalPostsGenerated: number;
+  totalCommentsGenerated: number;
+  postsByBot: Record<string, number>;
+  commentsByBot: Record<string, number>;
+  activeBots: number;
+  uptime: number;
+  postsPerMinute: number;
+  commentsPerMinute: number;
+  lastActivityAt: number;
+}
+
+export interface BotActivityLog {
+  timestamp: number;
+  botId: string;
+  action: 'post' | 'comment' | 'idle';
+  details: {
+    contentId?: string;
+    contentHash?: string;
+    success: boolean;
+    error?: string;
+  };
+}

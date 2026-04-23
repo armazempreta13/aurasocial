@@ -2,9 +2,9 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
-import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, PhoneIncoming } from 'lucide-react';
+import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff } from 'lucide-react';
+import { auth } from '@/firebase';
 
-// Free public STUN servers — NO third-party dependency
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
@@ -21,68 +21,91 @@ interface CallInfo {
   mode: CallMode;
 }
 
-// ─── Singleton polling ref (prevent multiple intervals) ──────────────────────
-let pollingInterval: ReturnType<typeof setInterval> | null = null;
-
-// ─── Component ───────────────────────────────────────────────────────────────
 export function CallManager() {
   const profile = useAppStore((s) => s.profile);
 
-  const [callState, setCallState]     = useState<CallState>('idle');
-  const [callInfo, setCallInfo]       = useState<CallInfo | null>(null);
-  const [isMuted, setIsMuted]         = useState(false);
-  const [isCamOff, setIsCamOff]       = useState(false);
+  const [callState, setCallState]       = useState<CallState>('idle');
+  const [callInfo, setCallInfo]         = useState<CallInfo | null>(null);
+  const [isMuted, setIsMuted]           = useState(false);
+  const [isCamOff, setIsCamOff]         = useState(false);
   const [callDuration, setCallDuration] = useState(0);
 
-  const pcRef         = useRef<RTCPeerConnection | null>(null);
-  const localStream   = useRef<MediaStream | null>(null);
-  const remoteStream  = useRef<MediaStream | null>(null);
-  const localVideoRef = useRef<HTMLVideoElement>(null);
+  // Refs espelham estado para usar dentro de callbacks/intervals sem stale closure
+  const callStateRef  = useRef<CallState>('idle');
+  const callInfoRef   = useRef<CallInfo | null>(null);
+
+  const pcRef          = useRef<RTCPeerConnection | null>(null);
+  const localStream    = useRef<MediaStream | null>(null);
+  const localVideoRef  = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const durationTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pendingOffer  = useRef<RTCSessionDescriptionInit | null>(null);
+  // Ref separado para o elemento de áudio — não reutilizar remoteVideoRef
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
+  const durationTimer  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef        = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pendingOffer   = useRef<RTCSessionDescriptionInit | null>(null);
+  // Fila de ICE candidates que chegaram antes do setRemoteDescription
+  const iceCandidateQueue = useRef<RTCIceCandidateInit[]>([]);
+
+  // Sincroniza refs com estado
+  useEffect(() => { callStateRef.current = callState; }, [callState]);
+  useEffect(() => { callInfoRef.current = callInfo; }, [callInfo]);
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
-  const sendWebRTCSignal = useCallback(async (toId: string, type: string, payload: any) => {
-    if (!profile?.uid) return;
+  const profileRef = useRef(profile);
+  useEffect(() => { profileRef.current = profile; }, [profile]);
+
+  const sendSignal = useCallback(async (toId: string, type: string, payload: unknown) => {
+    const currentUid = profileRef.current?.uid;
+    if (!currentUid) return;
+    const token = await auth.currentUser?.getIdToken();
     await fetch('/api/webrtc', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ toId, fromId: profile.uid, type, payload }),
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ toId, fromId: currentUid, type, payload })
     });
-  }, [profile?.uid]);
+  }, []); // Only needs stable fetch/JSON
 
   const cleanUp = useCallback(() => {
     pcRef.current?.close();
     pcRef.current = null;
     localStream.current?.getTracks().forEach(t => t.stop());
     localStream.current = null;
-    remoteStream.current = null;
-    if (localVideoRef.current) localVideoRef.current.srcObject = null;
+    if (localVideoRef.current)  localVideoRef.current.srcObject = null;
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
-    if (durationTimer.current) clearInterval(durationTimer.current);
+    if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
+    if (durationTimer.current)  clearInterval(durationTimer.current);
+    iceCandidateQueue.current = [];
+    pendingOffer.current = null;
     setCallState('idle');
     setCallInfo(null);
     setCallDuration(0);
     setIsMuted(false);
     setIsCamOff(false);
-    pendingOffer.current = null;
   }, []);
 
-  const createPC = useCallback(() => {
+  // createPC recebe remoteUserId como parâmetro — não depende de callInfo no closure,
+  // evitando o bug onde callInfo ainda é null quando onicecandidate dispara
+  const createPC = useCallback((remoteUserId: string) => {
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
     pc.onicecandidate = (e) => {
-      if (e.candidate && callInfo?.remoteUserId) {
-        sendWebRTCSignal(callInfo.remoteUserId, 'ice-candidate', { candidate: e.candidate });
+      if (e.candidate) {
+        sendSignal(remoteUserId, 'ice-candidate', { candidate: e.candidate });
       }
     };
 
     pc.ontrack = (e) => {
-      remoteStream.current = e.streams[0];
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = e.streams[0];
+      const stream = e.streams[0];
+      // Conecta no elemento correto dependendo do modo atual
+      const mode = callInfoRef.current?.mode;
+      if (mode === 'video' && remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = stream;
+      } else if (mode === 'audio' && remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = stream;
       }
     };
 
@@ -98,7 +121,18 @@ export function CallManager() {
 
     pcRef.current = pc;
     return pc;
-  }, [callInfo?.remoteUserId, sendWebRTCSignal, cleanUp]);
+  }, [sendSignal, cleanUp]);
+
+  // Drena a fila de ICE candidates após setRemoteDescription
+  const drainIceCandidateQueue = useCallback(async () => {
+    if (!pcRef.current || iceCandidateQueue.current.length === 0) return;
+    for (const candidate of iceCandidateQueue.current) {
+      try {
+        await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch {}
+    }
+    iceCandidateQueue.current = [];
+  }, []);
 
   // ─── Start a Call ──────────────────────────────────────────────────────────
 
@@ -106,148 +140,198 @@ export function CallManager() {
     remoteUserId: string,
     remoteUserName: string,
     mode: CallMode,
-    remoteUserPhoto?: string
+    remoteUserPhoto?: string,
   ) => {
-    if (!profile?.uid || callState !== 'idle') return;
+    if (!profile?.uid || callStateRef.current !== 'idle') return;
 
-    setCallInfo({ remoteUserId, remoteUserName, mode, remoteUserPhoto });
+    const info: CallInfo = { remoteUserId, remoteUserName, mode, remoteUserPhoto };
+    setCallInfo(info);
+    callInfoRef.current = info; // sincroniza ref imediatamente
     setCallState('calling');
+    callStateRef.current = 'calling';
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: mode === 'video',
+      }).catch(async (error) => {
+        // Se video falhar, tenta só áudio
+        if (mode === 'video' && error.name === 'NotFoundError') {
+          console.warn('[WebRTC] Câmera não encontrada, usando apenas áudio');
+          return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        }
+        throw error;
       });
       localStream.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
-      const pc = createPC();
+      // Passa remoteUserId diretamente — não depende de callInfo state
+      const pc = createPC(remoteUserId);
       stream.getTracks().forEach(t => pc.addTrack(t, stream));
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      await sendWebRTCSignal(remoteUserId, 'call-offer', {
+      await sendSignal(remoteUserId, 'call-offer', {
         offer,
         mode,
-        callerName: profile.displayName,
-        callerPhoto: profile.photoURL,
+        callerName: profileRef.current?.displayName || 'Usuário',
+        callerPhoto: profileRef.current?.photoURL,
       });
     } catch (e) {
-      console.error('[WebRTC] Start call error:', e);
+      console.error('[WebRTC] startCall error:', e);
+      if (e instanceof Error) {
+        if (e.name === 'NotFoundError') {
+          console.error('[WebRTC] Dispositivo não encontrado - verifique se câmera/microfone estão conectados');
+        } else if (e.name === 'PermissionDenied') {
+          console.error('[WebRTC] Permissão negada para acessar câmera/microfone');
+        } else if (e.name === 'NotAllowedError') {
+          console.error('[WebRTC] Acesso não permitido - dispositivo pode estar em uso');
+        }
+      }
       cleanUp();
     }
-  }, [profile, callState, createPC, sendWebRTCSignal, cleanUp]);
+  }, [createPC, sendSignal, cleanUp]);
 
   // ─── Answer a Call ─────────────────────────────────────────────────────────
 
   const answerCall = useCallback(async () => {
-    if (!callInfo || !pendingOffer.current || !profile?.uid) return;
+    const info = callInfoRef.current;
+    if (!info || !pendingOffer.current || !profileRef.current?.uid) return;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: callInfo.mode === 'video',
+        video: info.mode === 'video',
+      }).catch(async (error) => {
+        // Se video falhar, tenta só áudio
+        if (info.mode === 'video' && error.name === 'NotFoundError') {
+          console.warn('[WebRTC] Câmera não encontrada, usando apenas áudio');
+          return navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        }
+        throw error;
       });
       localStream.current = stream;
       if (localVideoRef.current) localVideoRef.current.srcObject = stream;
 
-      const pc = createPC();
+      const pc = createPC(info.remoteUserId);
       stream.getTracks().forEach(t => pc.addTrack(t, stream));
 
       await pc.setRemoteDescription(new RTCSessionDescription(pendingOffer.current));
+      // Drena candidatos que chegaram antes do answer
+      await drainIceCandidateQueue();
+
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
 
-      await sendWebRTCSignal(callInfo.remoteUserId, 'call-answer', { answer });
+      await sendSignal(info.remoteUserId, 'call-answer', { answer });
     } catch (e) {
-      console.error('[WebRTC] Answer error:', e);
+      console.error('[WebRTC] answerCall error:', e);
       cleanUp();
     }
-  }, [callInfo, profile, createPC, sendWebRTCSignal, cleanUp]);
+  }, [createPC, sendSignal, drainIceCandidateQueue, cleanUp]);
 
   // ─── Reject / Hang Up ──────────────────────────────────────────────────────
 
   const rejectCall = useCallback(async () => {
-    if (callInfo) await sendWebRTCSignal(callInfo.remoteUserId, 'call-reject', {});
+    const info = callInfoRef.current;
+    if (info) await sendSignal(info.remoteUserId, 'call-reject', {});
     cleanUp();
-  }, [callInfo, sendWebRTCSignal, cleanUp]);
+  }, [sendSignal, cleanUp]);
 
   const hangUp = useCallback(async () => {
-    if (callInfo) await sendWebRTCSignal(callInfo.remoteUserId, 'call-hang-up', {});
+    const info = callInfoRef.current;
+    if (info) await sendSignal(info.remoteUserId, 'call-hang-up', {});
     cleanUp();
-  }, [callInfo, sendWebRTCSignal, cleanUp]);
+  }, [sendSignal, cleanUp]);
 
   // ─── Toggle Controls ───────────────────────────────────────────────────────
 
-  const toggleMute = () => {
+  const toggleMute = useCallback(() => {
     if (!localStream.current) return;
     localStream.current.getAudioTracks().forEach(t => { t.enabled = !t.enabled; });
     setIsMuted(m => !m);
-  };
+  }, []);
 
-  const toggleCamera = () => {
+  const toggleCamera = useCallback(() => {
     if (!localStream.current) return;
     localStream.current.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
     setIsCamOff(v => !v);
-  };
+  }, []);
 
-  // ─── Incoming Signal Polling ───────────────────────────────────────────────
+  // ─── Polling de sinais ─────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!profile?.uid) return;
 
     const poll = async () => {
       try {
-        const res = await fetch(`/api/webrtc?userId=${profile.uid}`);
-        const signals = await res.json();
+        const token = await auth.currentUser?.getIdToken();
+        const res = await fetch(`/api/webrtc?userId=${profile.uid}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!res.ok) return;
+        const signals: { type: string; fromId: string; payload: any }[] = await res.json();
 
-        for (const signal of signals) {
-          const { type, fromId, payload } = signal;
+        for (const { type, fromId, payload } of signals) {
 
-          if (type === 'call-offer' && callState === 'idle') {
+          if (type === 'call-offer' && callStateRef.current === 'idle') {
             pendingOffer.current = payload.offer;
-            setCallState('incoming');
-            setCallInfo({
-              remoteUserId: fromId,
+            const info: CallInfo = {
+              remoteUserId:   fromId,
               remoteUserName: payload.callerName || 'Usuário',
               remoteUserPhoto: payload.callerPhoto,
               mode: payload.mode || 'audio',
-            });
+            };
+            setCallInfo(info);
+            callInfoRef.current = info;
+            setCallState('incoming');
+            callStateRef.current = 'incoming';
           }
 
           if (type === 'call-answer' && pcRef.current) {
-            await pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.answer));
+            await pcRef.current.setRemoteDescription(
+              new RTCSessionDescription(payload.answer)
+            );
+            // Drena candidatos que chegaram antes do answer
+            await drainIceCandidateQueue();
           }
 
-          if (type === 'ice-candidate' && pcRef.current && payload.candidate) {
-            try {
-              await pcRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate));
-            } catch {}
+          if (type === 'ice-candidate' && payload.candidate) {
+            if (pcRef.current?.remoteDescription) {
+              // Remote description já foi setada — adiciona direto
+              try {
+                await pcRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate));
+              } catch {}
+            } else {
+              // Ainda não tem remote description — enfileira para depois
+              iceCandidateQueue.current.push(payload.candidate);
+            }
           }
 
           if (type === 'call-reject' || type === 'call-hang-up') {
             cleanUp();
           }
         }
-      } catch {}
+      } catch {
+        // Mantém polling mesmo em falha de rede
+      }
     };
 
-    if (pollingInterval) clearInterval(pollingInterval);
-    pollingInterval = setInterval(poll, 1200); // Poll every 1.2s for snappy response
-
+    pollRef.current = setInterval(poll, 1500);
     return () => {
-      if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+      if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [profile?.uid, callState, cleanUp]);
+  }, [profile?.uid, cleanUp, drainIceCandidateQueue]);
 
-  // Make startCall available globally so messages page can call it
+  // Expõe startCall via store (não via window) — adicione setStartCall ao seu store
   useEffect(() => {
-    (window as any).__auraStartCall = startCall;
-    return () => { delete (window as any).__auraStartCall; };
+    useAppStore.getState().setStartCall?.(startCall);
+    return () => { useAppStore.getState().setStartCall?.(null); };
   }, [startCall]);
 
-  // ─── Format Duration ───────────────────────────────────────────────────────
+  // ─── Utils ─────────────────────────────────────────────────────────────────
+
   const formatDuration = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
@@ -258,7 +342,7 @@ export function CallManager() {
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-xl animate-in fade-in duration-300">
       <div className="relative w-full max-w-md mx-4 bg-[#0f0f12] rounded-[40px] overflow-hidden shadow-[0_40px_120px_rgba(0,0,0,0.8)] border border-white/5">
 
-        {/* Video backgrounds */}
+        {/* Vídeo remoto — só renderiza em modo vídeo */}
         {callInfo?.mode === 'video' && (
           <>
             <video
@@ -277,79 +361,113 @@ export function CallManager() {
           </>
         )}
 
-        {/* Overlay gradient */}
+        {/* Elemento de áudio dedicado — separado do video ref */}
+        <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
+
+        {/* Overlay */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-black/80 pointer-events-none" />
 
-        {/* Content */}
+        {/* Conteúdo */}
         <div className="relative z-10 p-10 flex flex-col items-center gap-6">
+
           {/* Avatar */}
           <div className="relative">
             <img
-              src={callInfo?.remoteUserPhoto || `https://ui-avatars.com/api/?name=${callInfo?.remoteUserName}&size=120&background=1d4ed8&color=fff`}
-              alt=""
-              className={`w-28 h-28 rounded-full object-cover border-4 border-white/10 ${callState === 'calling' || callState === 'incoming' ? 'animate-pulse' : ''}`}
+              src={
+                callInfo?.remoteUserPhoto ||
+                `https://ui-avatars.com/api/?name=${encodeURIComponent(callInfo?.remoteUserName ?? 'U')}&size=120&background=1d4ed8&color=fff`
+              }
+              alt={callInfo?.remoteUserName}
+              className={`w-28 h-28 rounded-full object-cover border-4 border-white/10 ${
+                callState === 'calling' || callState === 'incoming' ? 'animate-pulse' : ''
+              }`}
             />
-            {callInfo?.mode === 'video' ? (
-              <div className="absolute bottom-0 right-0 w-8 h-8 bg-blue-600 rounded-full border-2 border-[#0f0f12] flex items-center justify-center">
-                <Video size={14} className="text-white" />
-              </div>
-            ) : (
-              <div className="absolute bottom-0 right-0 w-8 h-8 bg-green-500 rounded-full border-2 border-[#0f0f12] flex items-center justify-center">
-                <Phone size={14} className="text-white" />
-              </div>
-            )}
+            <div className={`absolute bottom-0 right-0 w-8 h-8 rounded-full border-2 border-[#0f0f12] flex items-center justify-center ${
+              callInfo?.mode === 'video' ? 'bg-blue-600' : 'bg-green-500'
+            }`}>
+              {callInfo?.mode === 'video'
+                ? <Video size={14} className="text-white" />
+                : <Phone size={14} className="text-white" />
+              }
+            </div>
           </div>
 
-          {/* Name & Status */}
+          {/* Nome e status */}
           <div className="text-center">
-            <h2 className="text-2xl font-black text-white tracking-tight">{callInfo?.remoteUserName}</h2>
+            <h2 className="text-2xl font-black text-white tracking-tight">
+              {callInfo?.remoteUserName}
+            </h2>
             <p className="text-sm font-semibold text-white/50 mt-1 uppercase tracking-widest">
-              {callState === 'calling' && 'Chamando...'}
-              {callState === 'incoming' && `${callInfo?.mode === 'video' ? 'Chamada de vídeo' : 'Chamada de áudio'} recebida`}
+              {callState === 'calling'   && 'Chamando...'}
+              {callState === 'incoming'  && `${callInfo?.mode === 'video' ? 'Chamada de vídeo' : 'Chamada de áudio'} recebida`}
               {callState === 'connected' && formatDuration(callDuration)}
-              {callState === 'ended' && 'Chamada encerrada'}
+              {callState === 'ended'     && 'Chamada encerrada'}
             </p>
           </div>
 
-          {/* Controls */}
+          {/* Controles */}
           <div className="flex items-center gap-5 mt-4">
-            {/* INCOMING */}
+
+            {/* Recebendo */}
             {callState === 'incoming' && (
               <>
-                <button onClick={rejectCall} className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center shadow-xl shadow-red-500/30 transition-all active:scale-95">
+                <button
+                  onClick={rejectCall}
+                  className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center shadow-xl shadow-red-500/30 transition-all active:scale-95"
+                  aria-label="Recusar chamada"
+                >
                   <PhoneOff size={26} className="text-white" />
                 </button>
-                <button onClick={answerCall} className="w-16 h-16 rounded-full bg-green-500 hover:bg-green-600 flex items-center justify-center shadow-xl shadow-green-500/30 transition-all active:scale-95 animate-bounce">
+                <button
+                  onClick={answerCall}
+                  className="w-16 h-16 rounded-full bg-green-500 hover:bg-green-600 flex items-center justify-center shadow-xl shadow-green-500/30 transition-all active:scale-95 animate-bounce"
+                  aria-label="Atender chamada"
+                >
                   <Phone size={26} className="text-white" />
                 </button>
               </>
             )}
 
-            {/* CALLING / CONNECTED */}
+            {/* Chamando / Conectado */}
             {(callState === 'calling' || callState === 'connected') && (
               <>
-                <button onClick={toggleMute} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-95 ${isMuted ? 'bg-red-500/20 text-red-400 border border-red-500/20' : 'bg-white/10 text-white hover:bg-white/20'}`}>
+                <button
+                  onClick={toggleMute}
+                  aria-label={isMuted ? 'Ativar microfone' : 'Silenciar microfone'}
+                  className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-95 ${
+                    isMuted
+                      ? 'bg-red-500/20 text-red-400 border border-red-500/20'
+                      : 'bg-white/10 text-white hover:bg-white/20'
+                  }`}
+                >
                   {isMuted ? <MicOff size={22} /> : <Mic size={22} />}
                 </button>
 
                 {callInfo?.mode === 'video' && (
-                  <button onClick={toggleCamera} className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-95 ${isCamOff ? 'bg-red-500/20 text-red-400 border border-red-500/20' : 'bg-white/10 text-white hover:bg-white/20'}`}>
+                  <button
+                    onClick={toggleCamera}
+                    aria-label={isCamOff ? 'Ativar câmera' : 'Desativar câmera'}
+                    className={`w-14 h-14 rounded-full flex items-center justify-center transition-all active:scale-95 ${
+                      isCamOff
+                        ? 'bg-red-500/20 text-red-400 border border-red-500/20'
+                        : 'bg-white/10 text-white hover:bg-white/20'
+                    }`}
+                  >
                     {isCamOff ? <VideoOff size={22} /> : <Video size={22} />}
                   </button>
                 )}
 
-                <button onClick={hangUp} className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center shadow-xl shadow-red-500/30 transition-all active:scale-95">
+                <button
+                  onClick={hangUp}
+                  aria-label="Encerrar chamada"
+                  className="w-16 h-16 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center shadow-xl shadow-red-500/30 transition-all active:scale-95"
+                >
                   <PhoneOff size={26} className="text-white" />
                 </button>
               </>
             )}
           </div>
         </div>
-
-        {/* Audio element for non-video calls */}
-        {callInfo?.mode === 'audio' && (
-          <audio ref={remoteVideoRef as any} autoPlay playsInline className="hidden" />
-        )}
       </div>
     </div>
   );

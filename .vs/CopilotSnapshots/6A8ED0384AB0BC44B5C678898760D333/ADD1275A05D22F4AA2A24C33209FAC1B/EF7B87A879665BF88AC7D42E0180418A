@@ -1,0 +1,187 @@
+﻿import { BotPersona } from '../models/bot.types';
+import crypto from 'crypto';
+
+interface PostTemplate {
+  content: string;
+  type: 'thought' | 'question' | 'opinion' | 'update';
+}
+
+// Pool de templates por persona - mantém comportamento previsível mas variado
+const POST_TEMPLATES: Record<BotPersona, PostTemplate[]> = {
+  casual: [
+    { content: 'Alguém mais acha que o tempo tá passando rápido demais?', type: 'thought' },
+    { content: 'Começando algo novo hoje 🚀', type: 'update' },
+    { content: 'Qual foi a melhor parte do seu dia?', type: 'question' },
+    { content: 'Que dia produtivo! Finalmente consegui terminar aquilo', type: 'update' },
+    { content: 'Alguém mais tá cansado dessa semana?', type: 'thought' },
+    { content: 'Simplesmente adorei esse pôr do sol', type: 'opinion' },
+    { content: 'Que segunda-feira louca, não?', type: 'thought' },
+    { content: 'Descobri uma coisa legal hoje', type: 'update' },
+    { content: 'Quando você percebe que perdeu tempo com algo', type: 'thought' },
+    { content: 'Alguém experimenta isso também?', type: 'question' },
+  ],
+  opinativo: [
+    { content: 'Na minha opinião, as pessoas não dão importância suficiente para isso', type: 'opinion' },
+    { content: 'Acho que tem algo errado na forma como vemos essas coisas', type: 'opinion' },
+    { content: 'Discordo completamente da narrativa padrão sobre isso', type: 'opinion' },
+    { content: 'Por que ninguém fala sobre como isso realmente funciona?', type: 'question' },
+    { content: 'Se você parar pra pensar, faz muito sentido', type: 'opinion' },
+    { content: 'A maioria tá enganada quanto a isso', type: 'opinion' },
+    { content: 'Qual é a real sobre isso?', type: 'question' },
+    { content: 'Sempre soube que era assim', type: 'thought' },
+  ],
+  observador: [
+    { content: 'Observei uma coisa interessante hoje', type: 'observation' },
+    { content: 'Que padrão curioso eu notei', type: 'observation' },
+    { content: 'Achei interessante como as coisas se desenrolaram assim', type: 'thought' },
+    { content: 'Vendo as coisas de outra perspectiva', type: 'observation' },
+    { content: 'Que detalhe interessante que ninguém vai notar', type: 'thought' },
+    { content: 'Análise rápida: isso tá evoluindo assim', type: 'opinion' },
+    { content: 'Alguém mais tá vendo o mesmo que eu?', type: 'question' },
+  ],
+  engajador: [
+    { content: 'Vem cá, o que vocês acham disso? #discussão', type: 'question' },
+    { content: 'Pessoal, preciso de uma segunda opinião aqui', type: 'question' },
+    { content: 'Vocês conseguem acreditar em uma coisa? Conte-me mais', type: 'question' },
+    { content: 'Quero ouvir o que vocês têm a dizer sobre isso', type: 'question' },
+    { content: 'Vocês também sentem assim? Não sou só eu, certo?', type: 'question' },
+    { content: 'Alguém mais tem experiência com isso? Compartilha aí!', type: 'question' },
+    { content: 'Que legal! Vocês acompanharam esse desenvolvimento?', type: 'thought' },
+  ],
+};
+
+/**
+ * Gera um hash SHA-256 do conteúdo para evitar repetição
+ */
+function hashContent(content: string): string {
+  return crypto.createHash('sha256').update(content).digest('hex');
+}
+
+/**
+ * Seleciona um template aleatório com seed
+ */
+function selectTemplate(
+  persona: BotPersona,
+  seed: number,
+  excludeHashes: Set<string>
+): PostTemplate | null {
+  const templates = POST_TEMPLATES[persona];
+  const availableTemplates = templates.filter(
+    t => !excludeHashes.has(hashContent(t.content))
+  );
+
+  if (availableTemplates.length === 0) {
+    // Se todas foram usadas, volta ao pool completo
+    const index = Math.abs(seed) % templates.length;
+    return templates[index];
+  }
+
+  const index = Math.abs(seed) % availableTemplates.length;
+  return availableTemplates[index];
+}
+
+/**
+ * Gera um post realista baseado na persona do bot
+ */
+export function generatePost(
+  botPersona: BotPersona,
+  seed: number,
+  excludeHashes: Set<string> = new Set()
+): { content: string; type: 'thought' | 'question' | 'opinion' | 'update'; contentHash: string } | null {
+  const template = selectTemplate(botPersona, seed, excludeHashes);
+
+  if (!template) {
+    return null;
+  }
+
+  // Adiciona variação estrutural leve
+  const variations = applyStructuralVariation(template.content, seed);
+
+  const contentHash = hashContent(variations);
+
+  return {
+    content: variations,
+    type: template.type,
+    contentHash,
+  };
+}
+
+/**
+ * Aplica variações estruturais ao conteúdo para parecer menos robótico
+ */
+function applyStructuralVariation(content: string, seed: number): string {
+  const variations = [
+    // Sem variação
+    () => content,
+    // Adiciona emoji no final
+    () => {
+      const emojis = ['😄', '🤔', '👍', '✨', '💭', '🎯', '🚀'];
+      const emoji = emojis[Math.abs(seed) % emojis.length];
+      return `${content} ${emoji}`;
+    },
+    // Adiciona reticências
+    () => `${content}...`,
+    // Transforma em pergunta
+    () => {
+      if (!content.endsWith('?')) {
+        return `${content}?`;
+      }
+      return content;
+    },
+  ];
+
+  const variationIndex = Math.abs(seed * 7) % variations.length;
+  return variations[variationIndex]();
+}
+
+/**
+ * Verifica se um conteúdo é muito similar a outro existente
+ */
+export function isSimilarContent(content1: string, content2: string): boolean {
+  // Remove espaços extras e pontuação
+  const normalize = (str: string) =>
+    str.toLowerCase().replace(/[^\w\s]/g, '').trim();
+
+  const norm1 = normalize(content1);
+  const norm2 = normalize(content2);
+
+  // Verifica se tem mais de 70% de similaridade
+  const similarity = calculateSimilarity(norm1, norm2);
+  return similarity > 0.7;
+}
+
+/**
+ * Calcula similaridade entre duas strings usando Levenshtein
+ */
+function calculateSimilarity(str1: string, str2: string): number {
+  const maxLen = Math.max(str1.length, str2.length);
+  if (maxLen === 0) return 1;
+
+  const distance = levenshteinDistance(str1, str2);
+  return 1 - distance / maxLen;
+}
+
+/**
+ * Calcula distância de Levenshtein entre duas strings
+ */
+function levenshteinDistance(str1: string, str2: string): number {
+  const matrix: number[][] = Array(str2.length + 1)
+    .fill(null)
+    .map(() => Array(str1.length + 1).fill(0));
+
+  for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
+  for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
+
+  for (let j = 1; j <= str2.length; j++) {
+    for (let i = 1; i <= str1.length; i++) {
+      const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
+      matrix[j][i] = Math.min(
+        matrix[j][i - 1] + 1,
+        matrix[j - 1][i] + 1,
+        matrix[j - 1][i - 1] + indicator
+      );
+    }
+  }
+
+  return matrix[str2.length][str1.length];
+}

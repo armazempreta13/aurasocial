@@ -8,12 +8,22 @@ import { useAppStore } from '@/lib/store';
 import { Bookmark, Search } from 'lucide-react';
 import { PostCard } from '@/components/PostCard';
 import { useTranslation } from 'react-i18next';
+import { useRequireAuth } from '@/hooks/useRequireAuth';
 
 export default function BookmarksPage() {
   const { t } = useTranslation('common');
   const { profile, isAuthReady } = useAppStore();
+  const { user, isAuthReady: gateReady } = useRequireAuth();
   const [bookmarks, setBookmarks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  if (!gateReady || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (!isAuthReady || !profile) return;

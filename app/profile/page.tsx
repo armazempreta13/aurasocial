@@ -12,7 +12,7 @@ export default function ProfileRedirect() {
     if (profile?.uid) {
       router.replace(`/profile/${profile.uid}`);
     } else {
-      router.replace('/');
+      router.replace('/?auth=login');
     }
   }, [profile, router]);
 

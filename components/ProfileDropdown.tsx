@@ -8,11 +8,19 @@ import { signOut } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslation } from 'react-i18next';
+import { ConfirmModal } from './ConfirmModal';
+
+const DROPDOWN_EVENT = 'topnav:dropdown-open';
+
+function emitDropdownOpen(name: string) {
+  window.dispatchEvent(new CustomEvent(DROPDOWN_EVENT, { detail: { name } }));
+}
 
 export function ProfileDropdown() {
   const { t } = useTranslation('common');
   const profile = useAppStore((state) => state.profile);
   const [isOpen, setIsOpen] = useState(false);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
@@ -25,6 +33,21 @@ export function ProfileDropdown() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Close when another TopNav dropdown opens (prevents overlap)
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const opened = (event as CustomEvent<any>)?.detail?.name;
+      if (opened && opened !== 'profile') setIsOpen(false);
+    };
+    window.addEventListener(DROPDOWN_EVENT, handler as EventListener);
+    return () => window.removeEventListener(DROPDOWN_EVENT, handler as EventListener);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    emitDropdownOpen('profile');
+  }, [isOpen]);
 
   const handleLogout = async () => {
     try {
@@ -90,24 +113,45 @@ export function ProfileDropdown() {
           {/* Menu Items */}
           <div className="flex flex-col gap-1">
             <Link href="/settings">
-              <MenuItem icon={Settings} label={t('profile_dropdown.settings', 'Settings & privacy')} hasArrow onClick={() => setIsOpen(false)} />
+              <MenuItem
+                icon={Settings}
+                label={t('profile_dropdown.settings', 'Settings & privacy')}
+                subLabel={t('profile_dropdown.settings_desc', 'Account, privacy, notifications and controls')}
+                hasArrow
+                onClick={() => setIsOpen(false)}
+              />
             </Link>
             <Link href="/help">
-              <MenuItem icon={HelpCircle} label={t('profile_dropdown.help', 'Help & support')} hasArrow onClick={() => setIsOpen(false)} />
+              <MenuItem
+                icon={HelpCircle}
+                label={t('profile_dropdown.help', 'Help & support')}
+                subLabel={t('profile_dropdown.help_desc', 'Guides, quick answers and support paths')}
+                hasArrow
+                onClick={() => setIsOpen(false)}
+              />
             </Link>
             <Link href="/settings?tab=display">
-              <MenuItem icon={Moon} label={t('profile_dropdown.display', 'Display & accessibility')} hasArrow onClick={() => setIsOpen(false)} />
+              <MenuItem
+                icon={Moon}
+                label={t('profile_dropdown.display', 'Display & accessibility')}
+                subLabel={t('profile_dropdown.display_desc', 'Appearance, focus mode and reading comfort')}
+                hasArrow
+                onClick={() => setIsOpen(false)}
+              />
             </Link>
             <Link href="/feedback">
               <MenuItem 
                 icon={MessageSquareWarning} 
                 label={t('profile_dropdown.feedback', 'Give feedback')} 
-                subLabel={t('profile_dropdown.feedback_desc', 'Help us improve')} 
+                subLabel={t('profile_dropdown.feedback_desc', 'Report bugs, friction and product ideas')} 
                 onClick={() => setIsOpen(false)}
               />
             </Link>
             <button 
-              onClick={handleLogout}
+              onClick={() => {
+                setIsOpen(false);
+                setIsLogoutModalOpen(true);
+              }}
               className="flex items-center gap-3 p-2 hover:bg-muted/50 rounded-lg transition-colors w-full text-left"
             >
               <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center shrink-0">
@@ -133,6 +177,17 @@ export function ProfileDropdown() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={handleLogout}
+        title={t('profile_dropdown.logout', 'Sair da Conta')}
+        message={t('profile_dropdown.logout_confirm', 'Tem certeza que deseja sair agora? Sentiremos sua falta!')}
+        confirmText={t('common.logout', 'Sair')}
+        cancelText={t('common.cancel', 'Voltar')}
+        variant="danger"
+      />
     </div>
   );
 }
@@ -141,14 +196,14 @@ function MenuItem({ icon: Icon, label, subLabel, hasArrow, onClick }: { icon: an
   return (
     <button 
       onClick={onClick}
-      className="flex items-center gap-3 p-2 hover:bg-muted/50 rounded-lg transition-colors w-full text-left"
+      className="flex items-center gap-3 p-3 hover:bg-muted/50 rounded-xl transition-colors w-full text-left"
     >
-      <div className="w-9 h-9 rounded-full bg-muted flex items-center justify-center shrink-0">
+      <div className="w-10 h-10 rounded-2xl bg-muted flex items-center justify-center shrink-0">
         <Icon className="w-5 h-5 text-foreground" />
       </div>
       <div className="flex-1 flex flex-col">
         <span className="font-semibold text-[15px] text-foreground">{label}</span>
-        {subLabel && <span className="text-[12px] text-muted-foreground">{subLabel}</span>}
+        {subLabel && <span className="text-[12px] leading-5 text-muted-foreground">{subLabel}</span>}
       </div>
       {hasArrow && <ChevronRight className="w-5 h-5 text-muted-foreground" />}
     </button>

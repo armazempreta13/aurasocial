@@ -6,12 +6,22 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '@/firebase';
 import { TopNav } from '@/components/TopNav';
 import { PostCard } from '@/components/PostCard';
+import { useRequireAuth } from '@/hooks/useRequireAuth';
 
 export default function PostPage() {
   const params = useParams();
   const postId = params?.id as string;
   const [post, setPost] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const { user, isAuthReady } = useRequireAuth();
+
+  if (!isAuthReady || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
+      </div>
+    );
+  }
 
   useEffect(() => {
     if (!postId) return;

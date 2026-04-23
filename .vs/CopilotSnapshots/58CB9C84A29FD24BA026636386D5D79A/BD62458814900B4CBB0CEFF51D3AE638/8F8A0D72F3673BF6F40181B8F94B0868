@@ -1,0 +1,180 @@
+﻿'use client';
+
+import { Edit3, Loader2, MessageCircle, Pin, Search, UserPlus } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { ChatListItem, ChatUserPreview } from '@/lib/chat-runtime';
+import { TimeAgo } from '@/components/TimeAgo';
+import { useRef } from 'react';
+
+interface ChatListProps {
+  chats: ChatListItem[];
+  suggestions: ChatUserPreview[];
+  loading?: boolean;
+  activeChatId?: string | null;
+  searchQuery: string;
+  onSearchChange: (value: string) => void;
+  onSelectChat: (chatId: string) => void;
+  onStartChat: (user: ChatUserPreview) => void;
+  onCompose?: () => void;
+  title?: string;
+  compact?: boolean;
+}
+
+export function ChatList({
+  chats,
+  suggestions,
+  loading = false,
+  activeChatId,
+  searchQuery,
+  onSearchChange,
+  onSelectChat,
+  onStartChat,
+  onCompose,
+  title = '',
+  compact = false,
+}: ChatListProps) {
+  const { t } = useTranslation('common');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  return (
+    <aside className="flex h-full flex-col bg-white">
+      <div className={compact ? 'p-4' : 'p-8'}>
+        <div className={`mb-6 flex items-center justify-between ${compact ? 'mb-4' : 'mb-8'}`}>
+          <h1 className={`${compact ? 'text-2xl' : 'text-3xl'} font-black tracking-tight text-slate-900`}>
+            {title || t('messages_page.title', 'Mensagens')}
+          </h1>
+          <button
+            type="button"
+            onClick={() => {
+              onCompose?.();
+              searchInputRef.current?.focus();
+            }}
+            title={t('messages_page.new_message', 'Nova mensagem')}
+            className={`${compact ? 'h-10 w-10 rounded-xl' : 'h-12 w-12 rounded-2xl'} flex items-center justify-center bg-blue-600 text-white shadow-lg shadow-blue-600/20 transition-all hover:bg-blue-700 active:scale-95`}
+          >
+            <Edit3 size={compact ? 18 : 20} />
+          </button>
+        </div>
+
+        <div className="group relative">
+          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-blue-600" />
+          <input
+            ref={searchInputRef}
+            value={searchQuery}
+            onChange={(event) => onSearchChange(event.target.value)}
+            type="text"
+            placeholder={t('messages_page.search_placeholder', 'Buscar conversas...')}
+            className={`w-full rounded-[20px] border-none bg-slate-100 pl-12 pr-4 text-sm font-medium transition-all focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-600/5 ${compact ? 'py-3' : 'py-4'}`}
+          />
+        </div>
+      </div>
+
+      <div className={`scrollbar-hide flex-1 overflow-y-auto ${compact ? 'px-3 pb-4' : 'space-y-6 px-4 pb-12'}`}>
+        {loading && chats.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 py-20">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+              {t('messages_page.loading', 'Carregando conversas...')}
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className={compact ? 'space-y-1' : 'space-y-1'}>
+              {!compact && (
+                <p className="mb-3 px-5 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  {t('messages_page.conversations', 'Conversas')}
+                </p>
+              )}
+
+              {chats.map((chat) => {
+                const isActive = activeChatId === chat.id;
+                return (
+                  <button
+                    key={chat.id}
+                    onClick={() => onSelectChat(chat.id)}
+                    className={`relative flex w-full items-center gap-4 rounded-[26px] p-4 text-left transition-all ${
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/20'
+                        : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="relative shrink-0">
+                      <img
+                        src={chat.otherUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(chat.otherUser.displayName)}`}
+                        className={`h-14 w-14 rounded-[22px] bg-slate-200 object-cover ${isActive ? 'scale-105 ring-2 ring-white/50' : ''}`}
+                        alt={chat.otherUser.displayName}
+                      />
+                      {chat.pinned && (
+                        <div className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white bg-blue-500">
+                          <Pin size={10} className="rotate-45 text-white" />
+                        </div>
+                      )}
+                      {chat.unreadCount > 0 && (
+                        <div className="absolute -bottom-1 -right-1 flex min-h-[22px] min-w-[22px] items-center justify-center rounded-full border-[3px] border-white bg-pink-500 px-1 text-[10px] font-black text-white">
+                          {chat.unreadCount > 9 ? '9+' : chat.unreadCount}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-0.5 flex items-baseline justify-between gap-3">
+                        <span className="truncate text-[16px] font-bold tracking-tight">{chat.otherUser.displayName}</span>
+                        <span className={`text-[10px] font-bold ${isActive ? 'text-white/70' : 'text-slate-400'}`}>
+                          {chat.lastMessageTime ? <TimeAgo date={new Date(chat.lastMessageTime)} /> : ''}
+                        </span>
+                      </div>
+                      <p className={`truncate text-sm ${isActive ? 'text-white/80' : 'text-slate-500'}`}>
+                        {chat.lastMessage || t('messages_page.no_messages_yet', 'Nenhuma mensagem ainda. Diga oi!')}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {suggestions.length > 0 && (
+              <div className={`${compact ? 'mt-4 border-t border-slate-100 pt-4' : 'mt-6 border-t border-slate-50 pt-6'}`}>
+                {!compact && (
+                  <p className="mb-4 px-5 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    {t('messages_page.suggestions', 'Sugestões')}
+                  </p>
+                )}
+                <div className="grid gap-2">
+                  {suggestions.map((user) => (
+                    <button
+                      key={user.uid}
+                      onClick={() => onStartChat(user)}
+                      className="group flex w-full items-center gap-4 rounded-[28px] p-4 text-left transition-all hover:bg-slate-50"
+                    >
+                      <img
+                        src={user.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.displayName)}`}
+                        className="h-12 w-12 rounded-[20px] bg-slate-200 object-cover transition-all group-hover:scale-105"
+                        alt={user.displayName}
+                      />
+                      <div className="flex-1">
+                        <p className="mb-1 text-[15px] font-bold leading-none text-slate-900">{user.displayName}</p>
+                        <p className="flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.15em] text-blue-600">
+                          {t('messages_page.connect', 'Conectar')} <UserPlus size={10} />
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!loading && chats.length === 0 && suggestions.length === 0 && (
+              <div className="flex flex-col items-center gap-4 py-20 text-center">
+                <div className="flex h-16 w-16 items-center justify-center rounded-[24px] bg-slate-50 text-slate-200">
+                  <MessageCircle size={32} />
+                </div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-300">
+                  {t('messages_page.no_results', 'Nenhuma conversa encontrada.')}
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </aside>
+  );
+}

@@ -2,7 +2,7 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 
-// Imorting common bundles statically to prevent flicker on first load
+// Importing common bundles statically to prevent flicker on first load
 import enCommon from './locales/en/common.json';
 import ptBrCommon from './locales/pt-BR/common.json';
 
@@ -24,18 +24,18 @@ i18n
   .init({
     resources,
     defaultNS: 'common',
-    fallbackLng: 'en',
+    fallbackLng: 'pt-BR',
+    supportedLngs: ['pt-BR', 'pt', 'en'],
+    load: 'currentOnly',
+    nonExplicitSupportedLngs: true,
     
     interpolation: {
-      escapeValue: false, // react already safes from xss
+      escapeValue: false, // React already protects from XSS here
     },
     
     detection: {
-      // Order of detection
       order: ['localStorage', 'navigator'],
-      // localStorage key
       lookupLocalStorage: 'i18nextLng',
-      // cache user language on
       caches: ['localStorage'],
     }
   });

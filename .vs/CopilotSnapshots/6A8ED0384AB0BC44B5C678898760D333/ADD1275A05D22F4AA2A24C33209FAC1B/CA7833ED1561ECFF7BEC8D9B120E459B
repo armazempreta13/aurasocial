@@ -1,0 +1,239 @@
+﻿'use client';
+
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
+interface BotSystemStatus {
+  enabled: boolean;
+  isInitialized: boolean;
+  totalBots: number;
+  activeBots: number;
+  config: {
+    enabled: boolean;
+    activeBots: number;
+    postIntervalSeconds: number;
+    commentIntervalSeconds: number;
+    activityLevel: 'low' | 'medium' | 'high';
+    maxPostsPerBotPerDay: number;
+    maxCommentsPerBotPerDay: number;
+  };
+  engineStatus: {
+    isRunning: boolean;
+    activeBots: number;
+  };
+}
+
+interface BotMetrics {
+  totalPostsGenerated: number;
+  totalCommentsGenerated: number;
+  activeBots: number;
+  postsPerMinute: number;
+  commentsPerMinute: number;
+  uptime: number;
+}
+
+export function BotSystemControl() {
+  const [status, setStatus] = useState<BotSystemStatus | null>(null);
+  const [metrics, setMetrics] = useState<BotMetrics | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function fetchStatus() {
+    try {
+      const response = await fetch('/api/admin/bots/system', {
+        headers: { 'x-admin': 'true' },
+      });
+      if (!response.ok) throw new Error('Failed to fetch status');
+
+      const data = await response.json();
+      setStatus(data);
+
+      // Fetch metrics
+      const metricsResponse = await fetch('/api/admin/bots/metrics', {
+        headers: { 'x-admin': 'true' },
+      });
+      if (metricsResponse.ok) {
+        const metricsData = await metricsResponse.json();
+        setMetrics(metricsData.report.metrics);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    }
+  }
+
+  async function handleAction(action: string, config?: any) {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/admin/bots/system', {
+        method: 'POST',
+        headers: {
+          'x-admin': 'true',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action, config }),
+      });
+
+      if (!response.ok) throw new Error('Failed to perform action');
+
+      await fetchStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!status) return <div>Loading...</div>;
+
+  return (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        <h2 className="text-2xl font-bold">🤖 Sistema de Bot de Testes</h2>
+        <p className="text-gray-600">
+          Controle o sistema de simulação de usuários para testes
+        </p>
+      </div>
+
+      {error && (
+        <Card className="bg-red-50 border-red-200 p-4">
+          <p className="text-red-800">{error}</p>
+        </Card>
+      )}
+
+      <Tabs defaultValue="control" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="control">Controle</TabsTrigger>
+          <TabsTrigger value="metrics">Métricas</TabsTrigger>
+          <TabsTrigger value="config">Configuração</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="control" className="space-y-4">
+          <Card className="p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Status do Sistema</h3>
+                <p className="text-sm text-gray-600">
+                  {status.engineStatus.isRunning ? '🟢 Rodando' : '🔴 Parado'}
+                </p>
+              </div>
+              <div className="space-x-2">
+                <Button
+                  onClick={() => handleAction('start')}
+                  disabled={status.engineStatus.isRunning || loading}
+                  variant="default"
+                >
+                  Iniciar
+                </Button>
+                <Button
+                  onClick={() => handleAction('stop')}
+                  disabled={!status.engineStatus.isRunning || loading}
+                  variant="outline"
+                >
+                  Parar
+                </Button>
+                <Button
+                  onClick={() => handleAction('reset')}
+                  disabled={loading}
+                  variant="destructive"
+                >
+                  Resetar
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 pt-4">
+              <div className="p-4 bg-blue-50 rounded">
+                <p className="text-sm text-gray-600">Total de Bots</p>
+                <p className="text-2xl font-bold">{status.totalBots}</p>
+              </div>
+              <div className="p-4 bg-green-50 rounded">
+                <p className="text-sm text-gray-600">Bots Ativos</p>
+                <p className="text-2xl font-bold">{status.activeBots}</p>
+              </div>
+            </div>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="metrics" className="space-y-4">
+          <Card className="p-6 space-y-4">
+            <h3 className="text-lg font-semibold">Atividade em Tempo Real</h3>
+
+            {metrics && (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-purple-50 rounded">
+                  <p className="text-sm text-gray-600">Posts Gerados</p>
+                  <p className="text-3xl font-bold">{metrics.totalPostsGenerated}</p>
+                  <p className="text-xs text-gray-500">
+                    {metrics.postsPerMinute.toFixed(2)} posts/min
+                  </p>
+                </div>
+                <div className="p-4 bg-orange-50 rounded">
+                  <p className="text-sm text-gray-600">Comentários Gerados</p>
+                  <p className="text-3xl font-bold">{metrics.totalCommentsGenerated}</p>
+                  <p className="text-xs text-gray-500">
+                    {metrics.commentsPerMinute.toFixed(2)} comentários/min
+                  </p>
+                </div>
+                <div className="p-4 bg-indigo-50 rounded col-span-2">
+                  <p className="text-sm text-gray-600">Tempo Ativo</p>
+                  <p className="text-3xl font-bold">
+                    {Math.floor(metrics.uptime / 1000 / 60)}m {Math.floor((metrics.uptime / 1000) % 60)}s
+                  </p>
+                </div>
+              </div>
+            )}
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="config" className="space-y-4">
+          <Card className="p-6 space-y-4">
+            <h3 className="text-lg font-semibold">Configuração Atual</h3>
+
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-between p-3 bg-gray-50 rounded">
+                <span className="text-gray-600">Bots Ativos:</span>
+                <span className="font-mono">{status.config.activeBots}</span>
+              </div>
+              <div className="flex justify-between p-3 bg-gray-50 rounded">
+                <span className="text-gray-600">Intervalo Posts (s):</span>
+                <span className="font-mono">{status.config.postIntervalSeconds}</span>
+              </div>
+              <div className="flex justify-between p-3 bg-gray-50 rounded">
+                <span className="text-gray-600">Intervalo Comentários (s):</span>
+                <span className="font-mono">{status.config.commentIntervalSeconds}</span>
+              </div>
+              <div className="flex justify-between p-3 bg-gray-50 rounded">
+                <span className="text-gray-600">Nível de Atividade:</span>
+                <span className="font-mono capitalize">{status.config.activityLevel}</span>
+              </div>
+              <div className="flex justify-between p-3 bg-gray-50 rounded">
+                <span className="text-gray-600">Max Posts/Bot/Dia:</span>
+                <span className="font-mono">{status.config.maxPostsPerBotPerDay}</span>
+              </div>
+              <div className="flex justify-between p-3 bg-gray-50 rounded">
+                <span className="text-gray-600">Max Comentários/Bot/Dia:</span>
+                <span className="font-mono">{status.config.maxCommentsPerBotPerDay}</span>
+              </div>
+            </div>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      <Card className="p-4 bg-yellow-50 border-yellow-200">
+        <p className="text-sm text-yellow-800">
+          <strong>⚠️ Aviso de Segurança:</strong> Este sistema é exclusivamente para administradores.
+          Não se torna visível para usuários reais. Todos os dados de bot são marcados com{' '}
+          <code className="bg-yellow-100 px-1 rounded">isBot: true</code>.
+        </p>
+      </Card>
+    </div>
+  );
+}

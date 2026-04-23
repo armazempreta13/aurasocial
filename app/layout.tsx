@@ -6,13 +6,13 @@ import './globals.css';
 const inter = { variable: 'font-inter' };
 
 export const metadata: Metadata = {
-  title: 'Aura | The Intelligent Social Network',
-  description: 'A modern, premium social network with Dynamic Intelligent Interests.',
+  title: 'Aura | Rede social inteligente',
+  description: 'Uma rede social moderna com feed inteligente, comunidades e conteúdo relevante.',
 };
 
 export default function RootLayout({children}: {children: React.ReactNode}) {
   return (
-    <html lang="en" className={`${inter.variable}`}>
+    <html lang="pt-BR" className={`${inter.variable}`}>
       <body className="bg-background text-foreground min-h-screen flex flex-col font-sans" suppressHydrationWarning>
         <Providers>
           {children}

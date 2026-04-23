@@ -1,0 +1,187 @@
+﻿import { GoogleGenerativeAI } from '@google/genai';
+import { BotPersona } from '../models/bot.types';
+
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_KEY || 'AIzaSyDyHxlhHirncrv-6266G97ABal7EeSmhqE');
+
+interface GeneratedImage {
+  prompt: string;
+  imageUrl: string;
+  alt: string;
+}
+
+// Prompts base para gerar imagens por persona
+const IMAGE_PROMPTS_BY_PERSONA: Record<BotPersona, string[]> = {
+  casual: [
+    'Uma xícara de café quente em uma mesa de madeira com luz natural, estilo fotografia real',
+    'Um livro aberto em uma poltrona confortável, ambiente aconchego, fotografia real',
+    'Um laptop em um espaço de trabalho minimalista, iluminação clara',
+    'Flores coloridas em um vaso, fundo desfocado, fotografia real',
+    'Um pôr do sol bonito em uma praia, cores quentes',
+    'Uma planta verde em um vaso branco, luz natural',
+    'Um smartphone com tela em branco em uma mesa, estilo vida real',
+    'Café e croissant em uma mesa de café, fotografia real',
+  ],
+  opinativo: [
+    'Um gráfico estatístico moderno, dados visuais, infográfico',
+    'Um mapa-múndi em tons de azul, conceitual',
+    'Ícones minimalistas representando conceitos abstratos',
+    'Uma linha do tempo visual, histórico e futuro',
+    'Conceito de engrenagens e sistemas conectados, infográfico',
+    'Balança representando equilíbrio, ilustração conceitual',
+    'Diagrama de causa e efeito, design moderno',
+    'Rede de conexões, conceitual e moderno',
+  ],
+  observador: [
+    'Um detalhe macro de uma folha verde com água, fotografia detalhada',
+    'Texturas naturais em close, fotografia macro',
+    'Padrões na natureza, fotografia de detalhe',
+    'Uma gotícula de água refletindo a luz, macro',
+    'Textura de madeira com iluminação dramática',
+    'Um inseto em detalhe, fotografia macro',
+    'Padrões geométricos encontrados na natureza',
+    'Camadas de cores em um pôr do sol, detalhe fotográfico',
+  ],
+  engajador: [
+    'Pessoas em um grupo conversando animadamente, ilustração moderna',
+    'Ícone de comunidade com múltiplas pessoas conectadas, design moderno',
+    'Um evento social cheio de energia, cores vibrantes',
+    'Mãos unidas em símbolo de união, ilustração',
+    'Balões e confetes em celebração, imagem alegre',
+    'Pessoas colaborando em um projeto, ilustração moderna',
+    'Um coração grande com pessoas em volta, conceitual',
+    'Rostos diversos e sorridentes, ilustração inclusiva',
+  ],
+};
+
+/**
+ * Gera um prompt de imagem baseado na persona e seed
+ */
+function generateImagePrompt(persona: BotPersona, seed: number): string {
+  const prompts = IMAGE_PROMPTS_BY_PERSONA[persona];
+  const index = Math.abs(seed) % prompts.length;
+  return prompts[index];
+}
+
+/**
+ * Melhora o prompt usando Gemini para adicionar mais detalhe e contexto
+ */
+async function enhancePromptWithGemini(basePrompt: string, postContent: string): Promise<string> {
+  try {
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+    const result = await model.generateContent({
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: `Você é um especialista em criar prompts para geração de imagens.
+              
+Baseado neste post em português: "${postContent}"
+E este prompt inicial: "${basePrompt}"
+
+Gere um prompt melhorado em INGLÊS (2-3 frases) para geração de imagens que seja:
+- Específico e descritivo
+- Relevante ao tema do post
+- Com detalhes de estilo e qualidade
+- Inclua fotografia/ilustração/estilo artístico
+
+Retorne APENAS o prompt, sem explicações adicionais.`,
+            },
+          ],
+        },
+      ],
+    });
+
+    const enhancedPrompt =
+      result.response.candidates?.[0]?.content?.parts?.[0]?.text || basePrompt;
+
+    return enhancedPrompt.trim();
+  } catch (error) {
+    console.error('[IMAGE GENERATOR] Error enhancing prompt with Gemini:', error);
+    return basePrompt;
+  }
+}
+
+/**
+ * Gera uma URL de imagem usando Unsplash API (free, sem chave)
+ */
+function generateImageUrlFromPrompt(prompt: string, seed: number): string {
+  // Normaliza o prompt para usar em query
+  const normalizedPrompt = prompt
+    .split(' ')
+    .slice(0, 5)
+    .join('+')
+    .toLowerCase();
+
+  // Usa Unsplash API com seed para consistência
+  return `https://source.unsplash.com/600x400/?${normalizedPrompt}&sig=${Math.abs(seed)}`;
+}
+
+/**
+ * Gera imagem para um post com base na persona
+ */
+export async function generatePostImage(
+  botPersona: BotPersona,
+  postContent: string,
+  seed: number
+): Promise<GeneratedImage | null> {
+  try {
+    // Gera prompt base
+    const basePrompt = generateImagePrompt(botPersona, seed);
+
+    // Melhora com Gemini
+    const enhancedPrompt = await enhancePromptWithGemini(basePrompt, postContent);
+
+    // Gera URL de imagem
+    const imageUrl = generateImageUrlFromPrompt(enhancedPrompt, seed);
+
+    return {
+      prompt: enhancedPrompt,
+      imageUrl,
+      alt: `Imagem gerada para o post: ${postContent.substring(0, 60)}...`,
+    };
+  } catch (error) {
+    console.error('[IMAGE GENERATOR] Error generating post image:', error);
+    return null;
+  }
+}
+
+/**
+ * Gera múltiplas variações de imagem para um post
+ */
+export async function generatePostImageVariations(
+  botPersona: BotPersona,
+  postContent: string,
+  seed: number,
+  count: number = 3
+): Promise<GeneratedImage[]> {
+  const images: GeneratedImage[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const image = await generatePostImage(botPersona, postContent, seed + i);
+    if (image) {
+      images.push(image);
+    }
+  }
+
+  return images;
+}
+
+/**
+ * Decide se um post deve ter imagem baseado em persona e seed
+ */
+export function shouldPostHaveImage(botPersona: BotPersona, seed: number): boolean {
+  // Diferentes personas têm diferentes probabilidades de postar com imagem
+  const imageProbability: Record<BotPersona, number> = {
+    casual: 0.6, // Casual gosta de compartilhar imagens
+    opinativo: 0.3, // Opinativo prefere texto
+    observador: 0.7, // Observador adora detalhes visuais
+    engajador: 0.5, // Engajador mistura imagens e texto
+  };
+
+  const probability = imageProbability[botPersona];
+  const roll = Math.abs(seed % 100) / 100;
+
+  return roll < probability;
+}

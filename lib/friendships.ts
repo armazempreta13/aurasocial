@@ -16,8 +16,11 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '@/firebase';
+import { createNotification } from './notifications';
+import { increment as firestoreIncrement } from 'firebase/firestore';
 
 export type FriendshipCategory = 'close_friends' | 'friends' | 'colleagues' | 'interest_contacts';
+
 export type RelationshipStatus =
   | 'none'
   | 'request_sent'
@@ -73,6 +76,29 @@ export function getDefaultRelationshipSettings(): RelationshipSettings {
   return DEFAULT_RELATIONSHIP_SETTINGS;
 }
 
+function isPermissionDenied(error: any) {
+  return (
+    error?.code === 'permission-denied' ||
+    String(error?.message || '').includes('Missing or insufficient permissions')
+  );
+}
+
+async function setFriendshipDocument(
+  friendshipRef: ReturnType<typeof doc>,
+  fullPayload: Record<string, any>,
+  fallbackPayload?: Record<string, any>
+) {
+  try {
+    await setDoc(friendshipRef, fullPayload, { merge: true });
+  } catch (error) {
+    if (!fallbackPayload || !isPermissionDenied(error)) {
+      throw error;
+    }
+
+    await setDoc(friendshipRef, fallbackPayload, { merge: true });
+  }
+}
+
 export async function ensureRelationshipSettings(uid: string) {
   const settingsRef = doc(db, 'relationship_settings', uid);
   const settingsSnap = await getDoc(settingsRef);
@@ -91,12 +117,32 @@ export async function ensureRelationshipSettings(uid: string) {
   };
 }
 
+// Read-only version — does NOT create the document (safe to call as another user)
+async function readRelationshipSettings(uid: string): Promise<RelationshipSettings> {
+  try {
+    const settingsSnap = await getDoc(doc(db, 'relationship_settings', uid));
+    if (!settingsSnap.exists()) return { ...DEFAULT_RELATIONSHIP_SETTINGS };
+    return {
+      ...DEFAULT_RELATIONSHIP_SETTINGS,
+      ...(settingsSnap.data() as Partial<RelationshipSettings>),
+    };
+  } catch (err) {
+    console.warn(`Could not read relationship settings for ${uid}:`, err);
+    return { ...DEFAULT_RELATIONSHIP_SETTINGS };
+  }
+}
+
 async function getMutualCommunitiesCount(viewerUid: string, targetUid: string) {
-  const communitiesSnapshot = await getDocs(query(collection(db, 'communities'), where('members', 'array-contains', viewerUid), limit(50)));
-  return communitiesSnapshot.docs.reduce((count, communityDoc) => {
-    const members = (communityDoc.data().members || []) as string[];
-    return count + (members.includes(targetUid) ? 1 : 0);
-  }, 0);
+  try {
+    const communitiesSnapshot = await getDocs(query(collection(db, 'communities'), where('members', 'array-contains', viewerUid), limit(50)));
+    return communitiesSnapshot.docs.reduce((count, communityDoc) => {
+      const members = (communityDoc.data().members || []) as string[];
+      return count + (members.includes(targetUid) ? 1 : 0);
+    }, 0);
+  } catch (err) {
+    console.warn(`Could not load mutual communities for ${viewerUid}/${targetUid}:`, err);
+    return 0;
+  }
 }
 
 export async function getAffinityScore(viewerUid: string, targetUid: string) {
@@ -105,6 +151,15 @@ export async function getAffinityScore(viewerUid: string, targetUid: string) {
 }
 
 export async function getRelationshipSnapshot(viewerUid: string, targetUid: string): Promise<RelationshipSnapshot> {
+  const safeGet = async (ref: any) => {
+    try {
+      return await getDoc(ref);
+    } catch (err) {
+      console.warn(`Safe get failed for ${ref.path}:`, err);
+      return { exists: () => false, data: () => null } as any;
+    }
+  };
+
   const [
     friendshipSnap,
     outgoingRequestSnap,
@@ -116,15 +171,15 @@ export async function getRelationshipSnapshot(viewerUid: string, targetUid: stri
     affinityScore,
     mutualCommunitiesCount,
   ] = await Promise.all([
-    getDoc(doc(db, 'friendships', getPairId(viewerUid, targetUid))),
-    getDoc(doc(db, 'friend_requests', getDirectionalId(viewerUid, targetUid))),
-    getDoc(doc(db, 'friend_requests', getDirectionalId(targetUid, viewerUid))),
-    getDoc(doc(db, 'blocks', getDirectionalId(viewerUid, targetUid))),
-    getDoc(doc(db, 'blocks', getDirectionalId(targetUid, viewerUid))),
-    getDoc(doc(db, 'restrictions', getDirectionalId(viewerUid, targetUid))),
-    ensureRelationshipSettings(targetUid),
-    getAffinityScore(viewerUid, targetUid),
-    getMutualCommunitiesCount(viewerUid, targetUid),
+    safeGet(doc(db, 'friendships', getPairId(viewerUid, targetUid))),
+    safeGet(doc(db, 'friend_requests', getDirectionalId(viewerUid, targetUid))),
+    safeGet(doc(db, 'friend_requests', getDirectionalId(targetUid, viewerUid))),
+    safeGet(doc(db, 'blocks', getDirectionalId(viewerUid, targetUid))),
+    safeGet(doc(db, 'blocks', getDirectionalId(targetUid, viewerUid))),
+    safeGet(doc(db, 'restrictions', getDirectionalId(viewerUid, targetUid))),
+    readRelationshipSettings(targetUid),
+    getAffinityScore(viewerUid, targetUid).catch(() => 10),
+    getMutualCommunitiesCount(viewerUid, targetUid).catch(() => 0),
   ]);
 
   const friendship = friendshipSnap.exists() ? friendshipSnap.data() : null;
@@ -189,9 +244,15 @@ export async function sendFriendRequest(params: {
   source?: 'profile' | 'network' | 'community' | 'suggestion';
 }) {
   const { fromUser, toUser, message, category = 'friends', source = 'profile' } = params;
-  if (!fromUser?.uid || !toUser?.uid || fromUser.uid === toUser.uid) {
+  // Support both {uid} and {id} shapes (Firestore docs return `id` not `uid`)
+  const toUid: string = toUser?.uid || toUser?.id;
+  const fromUid: string = fromUser?.uid || fromUser?.id;
+  if (!fromUid || !toUid || fromUid === toUid) {
     throw new Error('Invalid friendship request.');
   }
+  // Normalise to uid shape so the rest of the function works
+  if (!fromUser.uid) fromUser.uid = fromUid;
+  if (!toUser.uid) toUser.uid = toUid;
 
   const outgoingInLastDay = await countRecentOutgoingRequests(fromUser.uid);
   if (outgoingInLastDay >= DAILY_REQUEST_LIMIT) {
@@ -222,14 +283,12 @@ export async function sendFriendRequest(params: {
     respondedAt: null,
   });
 
-  await setDoc(doc(collection(db, 'notifications')), {
+  await createNotification({
     userId: toUser.uid,
     actorId: fromUser.uid,
-    actorName: fromUser.displayName,
+    actorName: fromUser.displayName || '',
     actorPhoto: fromUser.photoURL || '',
     type: 'friend_request',
-    read: false,
-    createdAt: serverTimestamp(),
   });
 }
 
@@ -239,52 +298,117 @@ export async function respondToFriendRequest(params: {
   action: 'accept' | 'decline' | 'ignore';
 }) {
   const { requestOwnerUid, actorUser, action } = params;
-  const requestRef = doc(db, 'friend_requests', getDirectionalId(requestOwnerUid, actorUser.uid));
+  const actorUid = actorUser?.uid || actorUser?.id;
+  if (!actorUid) throw new Error('Invalid actor user.');
+
+  const requestRef = doc(db, 'friend_requests', getDirectionalId(requestOwnerUid, actorUid));
   const requestSnap = await getDoc(requestRef);
-  if (!requestSnap.exists()) throw new Error('Friend request not found.');
+  const pairId = getPairId(requestOwnerUid, actorUid);
+  const friendshipRef = doc(db, 'friendships', pairId);
+
+  if (!requestSnap.exists()) {
+    if (action === 'accept') {
+      const friendshipSnap = await getDoc(friendshipRef);
+      if (friendshipSnap.exists() && friendshipSnap.data().status === 'active') {
+        return;
+      }
+    }
+    throw new Error('Friend request not found.');
+  }
 
   const requestData = requestSnap.data();
-  if (requestData.toUid !== actorUser.uid || requestData.status !== 'pending') {
+  if (requestData.toUid !== actorUid) {
+    throw new Error('Invalid friend request recipient.');
+  }
+
+  if (requestData.status !== 'pending') {
+    // If it's already accepted, we can just return silently
+    if (requestData.status === 'accepted') {
+      const friendshipSnap = await getDoc(friendshipRef);
+      if (friendshipSnap.exists() && friendshipSnap.data().status === 'active') {
+        return;
+      }
+    }
+    // If it's declined or ignored, and the user tries to decline/ignore again, return silently
+    if (action !== 'accept' && (requestData.status === 'declined' || requestData.status === 'ignored')) {
+      return;
+    }
     throw new Error('Invalid friend request state.');
   }
 
   if (action === 'accept') {
-    const pairId = getPairId(requestOwnerUid, actorUser.uid);
-    const friendshipRef = doc(db, 'friendships', pairId);
+    const now = serverTimestamp();
     const batch = writeBatch(db);
 
+    // 1. Create/Update friendship
     batch.set(friendshipRef, {
       pairId,
-      users: [requestOwnerUid, actorUser.uid].sort(),
+      users: [requestOwnerUid, actorUid].sort(),
       status: 'active',
       categories: {
         [requestOwnerUid]: requestData.category || 'friends',
-        [actorUser.uid]: 'friends',
+        [actorUid]: 'friends',
       },
       mutedBy: [],
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
+      createdAt: now,
+      updatedAt: now,
       removedAt: null,
-    });
+    }, { merge: true });
+
+    // 2. Update request status
     batch.update(requestRef, {
       status: 'accepted',
-      respondedAt: serverTimestamp(),
+      respondedAt: now,
     });
-    batch.set(doc(collection(db, 'notifications')), {
-      userId: requestOwnerUid,
-      actorId: actorUser.uid,
-      actorName: actorUser.displayName,
-      actorPhoto: actorUser.photoURL || '',
-      type: 'friend_accept',
-      read: false,
-      createdAt: serverTimestamp(),
+
+    // 3. Increment counters for both users
+    const ownerRef = doc(db, 'users', requestOwnerUid);
+    const actorRef = doc(db, 'users', actorUid);
+    
+    batch.update(ownerRef, {
+      friendsCount: firestoreIncrement(1),
+      followersCount: firestoreIncrement(1),
+      followingCount: firestoreIncrement(1),
+    });
+    
+    batch.update(actorRef, {
+      friendsCount: firestoreIncrement(1),
+      followersCount: firestoreIncrement(1),
+      followingCount: firestoreIncrement(1),
+    });
+
+    // 4. Create follower records for mutual follow
+    const followA = doc(db, 'followers', `${requestOwnerUid}_${actorUid}`);
+    const followB = doc(db, 'followers', `${actorUid}_${requestOwnerUid}`);
+    
+    batch.set(followA, {
+      followerId: requestOwnerUid,
+      followingId: actorUid,
+      createdAt: now
+    });
+    
+    batch.set(followB, {
+      followerId: actorUid,
+      followingId: requestOwnerUid,
+      createdAt: now
     });
 
     await batch.commit();
-    await recalculateAffinityScore(requestOwnerUid, actorUser.uid, true);
-    await recalculateAffinityScore(actorUser.uid, requestOwnerUid, true);
+
+
+    await createNotification({
+      userId: requestOwnerUid,
+      actorId: actorUid,
+      actorName: actorUser.displayName || '',
+      actorPhoto: actorUser.photoURL || '',
+      type: 'friend_accept',
+    });
+    
+    await recalculateAffinityScore(requestOwnerUid, actorUid, true);
+    await recalculateAffinityScore(actorUid, requestOwnerUid, true);
     return;
   }
+
 
   await updateDoc(requestRef, {
     status: action === 'decline' ? 'declined' : 'ignored',
@@ -293,7 +417,10 @@ export async function respondToFriendRequest(params: {
 }
 
 export async function cancelFriendRequest(fromUid: string, toUid: string) {
-  await updateDoc(doc(db, 'friend_requests', getDirectionalId(fromUid, toUid)), {
+  const requestRef = doc(db, 'friend_requests', getDirectionalId(fromUid, toUid));
+  const snap = await getDoc(requestRef);
+  if (!snap.exists()) return; // already gone — nothing to cancel
+  await updateDoc(requestRef, {
     status: 'cancelled',
     respondedAt: serverTimestamp(),
   });
@@ -301,12 +428,46 @@ export async function cancelFriendRequest(fromUid: string, toUid: string) {
 
 export async function removeFriendship(viewerUid: string, targetUid: string) {
   const friendshipRef = doc(db, 'friendships', getPairId(viewerUid, targetUid));
-  await updateDoc(friendshipRef, {
+  const friendshipSnap = await getDoc(friendshipRef);
+  
+  if (!friendshipSnap.exists() || friendshipSnap.data().status !== 'active') return;
+
+  const now = serverTimestamp();
+  const batch = writeBatch(db);
+
+  // 1. Mark friendship as removed
+  batch.update(friendshipRef, {
     status: 'removed',
-    removedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+    removedAt: now,
+    updatedAt: now,
   });
+
+  // 2. Decrement counters
+    const viewerRef = doc(db, 'users', viewerUid);
+    const targetRef = doc(db, 'users', targetUid);
+
+    batch.update(viewerRef, {
+      friendsCount: firestoreIncrement(-1),
+      followersCount: firestoreIncrement(-1),
+      followingCount: firestoreIncrement(-1),
+    });
+
+    batch.update(targetRef, {
+      friendsCount: firestoreIncrement(-1),
+      followersCount: firestoreIncrement(-1),
+      followingCount: firestoreIncrement(-1),
+    });
+
+    // 3. Remove follower records
+    const followA = doc(db, 'followers', `${viewerUid}_${targetUid}`);
+    const followB = doc(db, 'followers', `${targetUid}_${viewerUid}`);
+    batch.delete(followA);
+    batch.delete(followB);
+
+    await batch.commit();
+
 }
+
 
 export async function setRestricted(viewerUid: string, targetUid: string, active: boolean) {
   const restrictionRef = doc(db, 'restrictions', getDirectionalId(viewerUid, targetUid));
@@ -337,7 +498,10 @@ export async function toggleMutedFriendship(viewerUid: string, targetUid: string
   if (muted) mutedBy.add(viewerUid);
   else mutedBy.delete(viewerUid);
 
-  await updateDoc(friendshipRef, {
+  await setFriendshipDocument(friendshipRef, {
+    pairId: getPairId(viewerUid, targetUid),
+    users: data.users || [viewerUid, targetUid].sort(),
+    status: data.status || 'active',
     mutedBy: Array.from(mutedBy),
     updatedAt: serverTimestamp(),
   });
@@ -391,6 +555,46 @@ export async function unblockUser(viewerUid: string, targetUid: string) {
   await deleteDoc(doc(db, 'blocks', getDirectionalId(viewerUid, targetUid)));
 }
 
+export async function toggleFollowUser(params: {
+  followerUid: string;
+  followingUid: string;
+  isFollowing: boolean;
+  followerName?: string;
+  followerPhoto?: string;
+}) {
+  const { followerUid, followingUid, isFollowing, followerName, followerPhoto } = params;
+  const followRef = doc(db, 'followers', `${followerUid}_${followingUid}`);
+  const targetUserRef = doc(db, 'users', followingUid);
+  const currentUserRef = doc(db, 'users', followerUid);
+  const batch = writeBatch(db);
+
+  if (isFollowing) {
+    // Unfollow
+    batch.delete(followRef);
+    batch.update(targetUserRef, { followersCount: firestoreIncrement(-1) });
+    batch.update(currentUserRef, { followingCount: firestoreIncrement(-1) });
+  } else {
+    // Follow
+    batch.set(followRef, {
+      followerId: followerUid,
+      followingId: followingUid,
+      createdAt: serverTimestamp()
+    });
+    batch.update(targetUserRef, { followersCount: firestoreIncrement(1) });
+    batch.update(currentUserRef, { followingCount: firestoreIncrement(1) });
+
+    await createNotification({
+      userId: followingUid,
+      actorId: followerUid,
+      actorName: followerName || 'Usuário',
+      actorPhoto: followerPhoto || '',
+      type: 'follow',
+    });
+  }
+
+  await batch.commit();
+}
+
 export async function updateRelationshipSettings(uid: string, settings: RelationshipSettings) {
   await setDoc(
     doc(db, 'relationship_settings', uid),
@@ -403,12 +607,17 @@ export async function updateRelationshipSettings(uid: string, settings: Relation
 }
 
 export async function getFriendIds(uid: string) {
-  const friendshipsSnapshot = await getDocs(query(collection(db, 'friendships'), where('users', 'array-contains', uid)));
-  return friendshipsSnapshot.docs
-    .map((friendshipDoc) => friendshipDoc.data())
-    .filter((friendship) => friendship.status === 'active')
-    .map((friendship) => friendship.users.find((userId: string) => userId !== uid))
-    .filter(Boolean);
+  try {
+    const friendshipsSnapshot = await getDocs(query(collection(db, 'friendships'), where('users', 'array-contains', uid)));
+    return friendshipsSnapshot.docs
+      .map((friendshipDoc) => friendshipDoc.data())
+      .filter((friendship) => friendship.status === 'active')
+      .map((friendship) => friendship.users.find((userId: string) => userId !== uid))
+      .filter(Boolean);
+  } catch (err) {
+    console.warn(`Could not load friends for ${uid} (likely permission/index issue):`, err);
+    return [];
+  }
 }
 
 export async function getBlockedUserIds(uid: string) {

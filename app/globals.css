@@ -69,3 +69,88 @@
     animation: pop-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards, float-fast 3.5s ease-in-out infinite alternate;
   }
 }
+
+/* ✨ Animações do Estado Vazio */
+
+/* Ícone pulsante sutil */
+@keyframes emptyStateIconGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(168, 85, 247, 0);
+  }
+}
+
+.empty-state-icon {
+  animation: emptyStateIconGlow 3s ease-in-out infinite;
+}
+
+/* Entrada suave do conteúdo */
+@keyframes emptyStateEnter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.empty-state-container {
+  animation: emptyStateEnter 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Hover elegante nos botões */
+@keyframes buttonHoverGlow {
+  from {
+    box-shadow: 0 4px 12px rgba(168, 85, 247, 0.15);
+  }
+  to {
+    box-shadow: 0 8px 24px rgba(168, 85, 247, 0.25);
+  }
+}
+
+.empty-state-btn:hover {
+  animation: buttonHoverGlow 0.3s ease-out forwards;
+}
+
+/* Tips item entrada com delay */
+@keyframes tipsItemEnter {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.tips-item {
+  animation: tipsItemEnter 0.3s ease-out forwards;
+}
+
+.tips-item:nth-child(1) { animation-delay: 0.2s; }
+.tips-item:nth-child(2) { animation-delay: 0.3s; }
+.tips-item:nth-child(3) { animation-delay: 0.4s; }
+
+/* Divider animation */
+@keyframes dividerEnter {
+  from {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+.divider-line {
+  animation: dividerEnter 0.4s ease-out forwards;
+}
+
+.divider-line:nth-child(1) { animation-delay: 0.15s; }
+.divider-line:nth-child(3) { animation-delay: 0.15s; }

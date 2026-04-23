@@ -7,12 +7,16 @@ import { db } from '@/firebase';
 import { useAppStore } from '@/lib/store';
 import { Users, UserPlus, UserCheck, Search, UserRoundCheck, UserRoundX, ShieldBan, Repeat2 } from 'lucide-react';
 import Link from 'next/link';
-import { getPendingFriendRequests, getRelationshipSnapshot, getSuggestedFriends, respondToFriendRequest, sendFriendRequest, searchUsers } from '@/lib/friendships';
+import { getPendingFriendRequests, getRelationshipSnapshot, getSuggestedFriends, respondToFriendRequest, sendFriendRequest, searchUsers, toggleFollowUser } from '@/lib/friendships';
+
+import { createNotification } from '@/lib/notifications';
 import { useTranslation } from 'react-i18next';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useRequireAuth } from '@/hooks/useRequireAuth';
 
 export default function NetworkPage() {
   const { t } = useTranslation('common');
+  const { user, isAuthReady } = useRequireAuth();
   const { profile } = useAppStore();
   const [users, setUsers] = useState<any[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<any[]>([]);
@@ -24,27 +28,53 @@ export default function NetworkPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
 
+  if (!isAuthReady || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
+      </div>
+    );
+  }
+
   useEffect(() => {
     if (!profile) return;
 
+    // 1. REAL-TIME: Following list
     const followQ = query(collection(db, 'followers'), where('followerId', '==', profile.uid));
     const unsubscribeFollow = onSnapshot(followQ, (snapshot) => {
       const followingIds = new Set(snapshot.docs.map(doc => doc.data().followingId));
       setFollowing(followingIds);
     }, (error) => {
       console.error('Error in network follow sub:', error);
-      setLoading(false);
     });
 
-    const loadNetworkData = async () => {
-      try {
-        const [suggestions, requests] = await Promise.all([
-          getSuggestedFriends(profile.uid),
-          getPendingFriendRequests(profile.uid)
-        ]);
+    // 2. REAL-TIME: Pending Friend Requests
+    const requestsQ = query(
+      collection(db, 'friend_requests'),
+      where('toUid', '==', profile.uid),
+      where('status', '==', 'pending')
+    );
+    
+    const unsubscribeRequests = onSnapshot(requestsQ, async (snapshot) => {
+      const requestPromises = snapshot.docs.map(async (requestDoc) => {
+        const requestData = requestDoc.data();
+        const userSnap = await getDoc(doc(db, 'users', requestData.fromUid));
+        return {
+          id: requestDoc.id,
+          ...requestData,
+          user: userSnap.exists() ? { id: userSnap.id, ...userSnap.data() } : null,
+        };
+      });
+      
+      const resolvedRequests = (await Promise.all(requestPromises)).filter(r => r.user);
+      setPendingRequests(resolvedRequests.sort((a: any, b: any) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
+    });
 
+    // 3. One-time load for suggestions (suggestions are complex and better as a fetch)
+    const loadSuggestions = async () => {
+      try {
+        const suggestions = await getSuggestedFriends(profile.uid);
         setUsers(suggestions);
-        setPendingRequests(requests);
 
         const relationshipEntries = await Promise.allSettled(
           suggestions.map(async (user) => [user.id, await getRelationshipSnapshot(profile.uid, user.id)] as const)
@@ -57,21 +87,22 @@ export default function NetworkPage() {
             map[id] = snap;
           }
         });
-
         setRelationshipMap(map);
       } catch (error) {
-        console.error('Error loading network data:', error);
+        console.error('Error loading suggestions:', error);
       } finally {
         setLoading(false);
       }
     };
 
-    void loadNetworkData();
+    void loadSuggestions();
 
     return () => {
       unsubscribeFollow();
+      unsubscribeRequests();
     };
   }, [profile]);
+
 
   const debouncedSearch = useDebounce(searchQuery, 400);
 
@@ -116,34 +147,19 @@ export default function NetworkPage() {
   const toggleFollow = async (targetUserId: string, targetUserName: string, targetUserPhoto: string) => {
     if (!profile) return;
 
-    const followId = `${profile.uid}_${targetUserId}`;
-    const followRef = doc(db, 'followers', followId);
-
     try {
-      if (following.has(targetUserId)) {
-        await deleteDoc(followRef);
-      } else {
-        await setDoc(followRef, {
-          followerId: profile.uid,
-          followingId: targetUserId,
-          createdAt: serverTimestamp()
-        });
-
-        // Create notification
-        await setDoc(doc(collection(db, 'notifications')), {
-          userId: targetUserId,
-          actorId: profile.uid,
-          actorName: profile.displayName,
-          actorPhoto: profile.photoURL || '',
-          type: 'follow',
-          read: false,
-          createdAt: serverTimestamp()
-        });
-      }
+      await toggleFollowUser({
+        followerUid: profile.uid,
+        followingUid: targetUserId,
+        isFollowing: following.has(targetUserId),
+        followerName: profile.displayName,
+        followerPhoto: profile.photoURL
+      });
     } catch (error) {
       console.error('Error toggling follow:', error);
     }
   };
+
 
   const refreshCards = async () => {
     if (!profile) return;
@@ -162,11 +178,9 @@ export default function NetworkPage() {
 
     setBusyId(user.id);
     try {
-      const message = window.prompt(t('network_page.optional_message', 'Optional message for this friend request:'), '') || '';
       await sendFriendRequest({
         fromUser: profile,
-        toUser: user,
-        message,
+        toUser: user,   // friendships.ts now accepts {id} or {uid}
         source: 'suggestion',
       });
       await refreshCards();

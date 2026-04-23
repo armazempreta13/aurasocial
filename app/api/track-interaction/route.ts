@@ -1,22 +1,21 @@
 import { NextResponse } from 'next/server';
 import { processInteraction } from '@/lib/reputation-engine';
-import { db } from '@/firebase'; // Client-side DB for writing the interaction
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { verifyFirebaseIdToken } from '@/lib/server/firebase-auth';
 
 export async function POST(req: Request) {
+  const auth = await verifyFirebaseIdToken(req.headers);
+  if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const { type, fromUid, toUid, postId } = await req.json();
 
-    // 1. Log the interaction in Firestore (Client-side DB)
-    await addDoc(collection(db, 'interactions'), {
-      type,
-      fromUid,
-      toUid,
-      postId,
-      createdAt: serverTimestamp(),
-    });
+    if (!type || !fromUid || !toUid || !postId) {
+      return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
+    }
+    if (fromUid !== auth.uid) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
-    // 2. Trigger reputation update (Server-side)
     await processInteraction(type, fromUid, toUid, postId);
 
     return NextResponse.json({ success: true });

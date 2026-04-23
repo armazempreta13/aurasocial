@@ -18,6 +18,9 @@ export function SharePostModal({ isOpen, onClose, onConfirm, postAuthor, postCon
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
     
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();

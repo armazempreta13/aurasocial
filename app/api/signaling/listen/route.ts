@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { signalingStore, SignalingEvent } from '@/lib/signaling';
+import { verifyFirebaseIdToken } from '@/lib/server/firebase-auth';
 
 export async function GET(req: NextRequest) {
+  const auth = await verifyFirebaseIdToken(req.headers);
+  if (!auth) return new Response('Unauthorized', { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const userId = searchParams.get('userId');
 
-  if (!userId) return new Response('Unauthorized', { status: 401 });
+  if (!userId || userId !== auth.uid) return new Response('Unauthorized', { status: 401 });
 
   const stream = new ReadableStream({
     start(controller) {

@@ -10,4 +10,5 @@ if (Number.isNaN(major) || major < 20 || major >= 25) {
       "",
     ].join("\n")
   );
+  process.exit(1);
 }
