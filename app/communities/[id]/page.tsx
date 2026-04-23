@@ -675,7 +675,7 @@ export default function CommunityDetailPage() {
                   Entre para acessar as conversas, o histórico e os detalhes internos deste espaço.
                 </p>
                 <button
-                  onClick={handleJoinLeave}
+                  onClick={handleJoinLeaveAction}
                   className="rounded-xl px-8 py-3 font-bold text-white transition-all hover:opacity-95"
                   style={{ backgroundColor: themeColor }}
                 >
