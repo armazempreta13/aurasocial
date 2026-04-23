@@ -30,7 +30,7 @@ import {
   LifeBuoy
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 
 export default function AdminSystem() {
   const [maintenance, setMaintenance] = useState(false);

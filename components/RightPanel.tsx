@@ -9,7 +9,7 @@ import Link from 'next/link';
 import { rankTrendingHashtags } from '@/lib/hashtags';
 import { useAppStore } from '@/lib/store';
 import { useChat } from '@/components/chat/ChatProvider';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { X, UserPlus, UserRoundCheck, Repeat2 } from 'lucide-react';
 import { getSuggestedFriends, getRelationshipSnapshot, sendFriendRequest, toggleFollowUser } from '@/lib/friendships';
 

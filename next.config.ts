@@ -29,7 +29,8 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: '/(.*)',
+        // Apply security headers to all routes EXCEPT static assets
+        source: '/((?!_next/static|favicon.ico).*)',
         headers: [
           {
             key: 'Cross-Origin-Opener-Policy',

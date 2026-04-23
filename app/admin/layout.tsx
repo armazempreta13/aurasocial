@@ -25,7 +25,7 @@ import {
   Cpu
 } from 'lucide-react';
 import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();

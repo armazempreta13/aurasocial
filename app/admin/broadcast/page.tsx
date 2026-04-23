@@ -25,7 +25,7 @@ import {
   Globe
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 

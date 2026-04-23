@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { db } from '@/firebase';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { Bell, X, Zap, AlertCircle, Info } from 'lucide-react';
 import { usePathname } from 'next/navigation';
 

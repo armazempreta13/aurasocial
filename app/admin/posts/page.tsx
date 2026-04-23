@@ -38,7 +38,7 @@ import {
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAppStore } from '@/lib/store';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 
 export default function AdminPosts() {
   const [posts, setPosts] = useState<any[]>([]);
