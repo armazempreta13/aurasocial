@@ -93,6 +93,7 @@ export default function CommunityDetailPage() {
   const [showMemberMenu, setShowMemberMenu] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
   const [shareModalTab, setShareModalTab] = useState<'invite' | 'share'>('invite');
   const [searchOpen, setSearchOpen] = useState(false);
   const [communitySearchQuery, setCommunitySearchQuery] = useState('');
