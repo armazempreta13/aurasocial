@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { db } from '@/firebase';
 import {
+  addDoc,
   arrayRemove,
   arrayUnion,
   collection,
