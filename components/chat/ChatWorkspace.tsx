@@ -95,7 +95,7 @@ export function ChatWorkspace() {
         pageChatId,
         setPageChatId,
         sendMessage,
-        loadMessages,
+        subscribeToChat,
         openChatWithUser,
     } = useChat();
 
@@ -106,7 +106,7 @@ export function ChatWorkspace() {
     useEffect(() => {
         if (initialChatId && initialChatId !== pageChatId) {
             setPageChatId(initialChatId);
-            loadMessages(initialChatId);
+            subscribeToChat(initialChatId);
         }
     }, [initialChatId]);
 
@@ -151,7 +151,7 @@ export function ChatWorkspace() {
                             const isExisting = chats.some(c => c.id === id);
                             if (isExisting) {
                                 setPageChatId(id);
-                                loadMessages(id);
+                                subscribeToChat(id);
                                 router.push(`/messages?chatId=${id}`);
                             } else {
                                 // It's likely a userId from suggestions

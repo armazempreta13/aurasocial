@@ -69,12 +69,7 @@ export function SearchOverlay({ onClose }: Props) {
         where('displayName_lower', '>=', norm),
         where('displayName_lower', '<=', norm + '\uf8ff'),
         limit(4)
-      ).withConverter ? query(
-        collection(db, 'users'),
-        where('displayName_lower', '>=', norm),
-        where('displayName_lower', '<=', norm + '\uf8ff'),
-        limit(4)
-      ) : query(collection(db, 'users'), limit(60)));
+      ));
 
       // Fallback: client-side filter when no index
       const allUsers = usersSnap.docs

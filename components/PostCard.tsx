@@ -1737,7 +1737,7 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
                   {mentionSearch && (
                     <div className="absolute bottom-full left-0 mb-2 w-64 z-50">
                       <MentionSuggestions
-                        search={mentionSearch.text}
+                        searchText={mentionSearch.text}
                         onSelect={(username) => {
                           const before = newComment.substring(0, mentionSearch.index);
                           const after = newComment.substring(mentionSearch.index + mentionSearch.text.length + 1);
