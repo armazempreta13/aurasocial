@@ -66,6 +66,7 @@ export function renderTextWithLinks(text: string, options: {
   baseHashtagUrl?: string;
   className?: string;
   linkClassName?: string;
+  inline?: boolean;
 } = {}) {
   if (!text) return null;
 
@@ -78,6 +79,10 @@ export function renderTextWithLinks(text: string, options: {
   // Normalize line endings and split
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   const elements: React.ReactNode[] = [];
+
+  if (options.inline) {
+    return parseInlineMarkdown(text, linkClassName, baseMentionUrl, baseHashtagUrl);
+  }
 
   lines.forEach((line, lineIdx) => {
     const isQuote = line.trimStart().startsWith('> ');

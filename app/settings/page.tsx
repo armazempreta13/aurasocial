@@ -38,14 +38,6 @@ function SettingsContent() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  if (!isAuthReady || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
-      </div>
-    );
-  }
-
   useEffect(() => {
     if (profile) {
       setDisplayName(profile.displayName || '');
@@ -61,6 +53,14 @@ function SettingsContent() {
     }
     setLanguage(i18n.resolvedLanguage?.startsWith('en') ? 'en' : 'pt-BR');
   }, [profile, i18n.resolvedLanguage]);
+
+  if (!isAuthReady || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
+      </div>
+    );
+  }
 
   const handleSaveChanges = async () => {
     if (!profile || isSaving) return;

@@ -6,6 +6,7 @@ import { IconButton } from './parts/ChatSubComponents';
 import { format, isToday, isYesterday } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAppStore } from '@/lib/store';
+import { motion } from 'framer-motion';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -96,12 +97,17 @@ export function ChatConversation({
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    // Only auto-scroll if the user is near the bottom (within 120px)
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    if (nearBottom || isTyping) {
-      el.scrollTop = el.scrollHeight;
+    
+    // Check if the last message is from the active user
+    const lastMsg = messages?.[messages?.length - 1];
+    const isMeLast = lastMsg?.senderId === activeUserId;
+    
+    // Auto-scroll if near bottom or if we just sent the message
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 250;
+    if (nearBottom || isTyping || isMeLast) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
     }
-  }, [messages, isTyping]);
+  }, [messages, isTyping, activeUserId]);
 
   // ── Group messages by calendar day ────────────────────────────────────────
   const groupedMessages = useMemo(() => {
@@ -240,8 +246,11 @@ export function ChatConversation({
               const isMe = msg.senderId === activeUserId;
 
               return (
-                <div
+                <motion.div
                   key={msg.id}
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
                   className={`flex items-end gap-2.5 ${
                     isMe ? 'flex-row-reverse' : 'flex-row'
                   }`}
@@ -262,15 +271,35 @@ export function ChatConversation({
                     }`}
                   >
                     <div
-                      className={`overflow-hidden px-4 py-3 text-[14px] font-medium leading-relaxed ${
+                      className={`relative px-4 py-2.5 text-[14.5px] font-medium leading-relaxed transition-all duration-300 group-hover:translate-y-[-1px] ${
                         isMe
-                          ? 'rounded-t-[14px] rounded-bl-[14px] rounded-br-[4px] bg-[#7c6fcd] text-white'
-                          : 'rounded-t-[14px] rounded-br-[14px] rounded-bl-[4px] border border-[#e4e8f2] bg-white text-[#1a1f3a]'
+                          ? 'rounded-[20px] rounded-br-[4px] bg-gradient-to-br from-[#7c6fcd] via-[#7c6fcd] to-[#6355b8] text-white shadow-[0_4px_15px_rgba(124,111,205,0.25)]'
+                          : 'rounded-[20px] rounded-bl-[4px] border border-[#e4e8f2]/60 bg-white/80 backdrop-blur-md text-[#1a1f3a] shadow-[0_2px_10px_rgba(0,0,0,0.03)]'
                       }`}
                     >
+                      {/* Premium Gloss Effect for 'isMe' */}
+                      {isMe && (
+                        <div className="absolute inset-0 bg-gradient-to-t from-transparent via-white/5 to-white/10 pointer-events-none" />
+                      )}
+
+                      {/* Improved Bubble Tail */}
+                      <div className={`absolute bottom-[-0.5px] h-4 w-4 ${
+                        isMe 
+                          ? 'right-[-7px] text-[#6355b8]' 
+                          : 'left-[-7px] text-white/80'
+                      }`}>
+                        <svg viewBox="0 0 16 16" className="h-full w-full fill-current filter drop-shadow-[0_1px_1px_rgba(0,0,0,0.05)]">
+                          {isMe ? (
+                            <path d="M0 16c4 0 8-4 8-10V0c0 4 4 16 8 16H0z" />
+                          ) : (
+                            <path d="M16 16c-4 0-8-4-8-10V0c0 4-4 16-8 16h16z" />
+                          )}
+                        </svg>
+                      </div>
+
                       {/* Image attachment */}
                       {msg.type === 'image' && msg.attachmentUrl && (
-                        <div className="-mx-2 -mt-1 mb-1 overflow-hidden rounded-lg">
+                        <div className="-mx-2 -mt-1 mb-1 overflow-hidden rounded-[14px]">
                           <img
                             src={msg.attachmentUrl}
                             alt="Anexo"
@@ -281,7 +310,7 @@ export function ChatConversation({
                       )}
                       {/* Text body */}
                       {msg.text && (
-                        <p className="whitespace-pre-wrap">{msg.text}</p>
+                        <p className="relative z-10 whitespace-pre-wrap">{msg.text}</p>
                       )}
                     </div>
 
@@ -305,7 +334,7 @@ export function ChatConversation({
                       )}
                     </div>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
           </div>

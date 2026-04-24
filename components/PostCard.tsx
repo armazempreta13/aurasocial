@@ -85,6 +85,15 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
   const [localPost, setLocalPost] = useState(initialPost);
   const post = localPost;
 
+  // 🛡️ SANITY CHECK: Prevent NaN in UI by ensuring counts are always numbers
+  const parseCount = (val: any) => {
+    const n = Number(val);
+    return isNaN(n) ? 0 : Math.max(0, n);
+  };
+  const likesCount = parseCount(post.likesCount);
+  const commentsCount = parseCount(post.commentsCount);
+  const sharesCount = parseCount(post.sharesCount);
+
   // Sync with prop updates
   useEffect(() => {
     setLocalPost(initialPost);
@@ -245,6 +254,8 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
         ...doc.data()
       }));
       setComments(commentsData);
+    }, (error) => {
+      console.warn('PostCard: Comments listener error:', error);
     });
 
     return () => unsubscribe();
@@ -281,6 +292,8 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
         const pinned = snap.data().pinnedPostIds || [];
         setIsPinnedLocally(pinned.includes(post.id));
       }
+    }, (error) => {
+      console.warn('PostCard: Community listener error:', error);
     });
     return () => unsub();
   }, [post.communityId, post.id, authUid]);
@@ -687,12 +700,18 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
         }
       }
     } catch (error: any) {
-      console.error('Error toggling reaction:', error);
+      const isMissingDoc = String(error?.message || '').includes('No document to update');
+      
       if (error?.code === 'permission-denied') {
+        console.error('Error toggling reaction:', error);
         alert(t('post_card.like_permission_denied', 'Você não tem permissão para curtir este post.'));
-      } else if (String(error?.message || '').includes('No document to update')) {
+      } else if (isMissingDoc) {
+        // Silent recovery: Post was likely deleted while user was looking at it
         queryClient.invalidateQueries({ queryKey: ['posts'] });
+      } else {
+        console.error('Error toggling reaction:', error);
       }
+      
       // Revert local UI state on failure
       setUserReaction(oldReaction);
       setLocalPost(localPost); // Restore previous state
@@ -1026,6 +1045,7 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
 
   const [showHeartOverlay, setShowHeartOverlay] = useState(false);
   const [showReactionSelector, setShowReactionSelector] = useState(false);
+  const [wasLongPress, setWasLongPress] = useState(false);
   const reactionTimerRef = useRef<any>(null);
 
   const handleDoubleClick = () => {
@@ -1034,6 +1054,18 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
       setShowHeartOverlay(true);
       setTimeout(() => setShowHeartOverlay(false), 1000);
     }
+  };
+
+  const handleTouchStart = () => {
+    setWasLongPress(false);
+    reactionTimerRef.current = setTimeout(() => {
+      setWasLongPress(true);
+      setShowReactionSelector(true);
+    }, 500);
+  };
+
+  const handleTouchEnd = () => {
+    if (reactionTimerRef.current) clearTimeout(reactionTimerRef.current);
   };
 
   const handleReactionMouseEnter = () => {
@@ -1077,6 +1109,18 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
     return post.authorUsername || '';
   }, [post.authorId, post.authorUsername, profile?.uid, profile?.username]);
 
+  const isAuthorVerified = useMemo(() => {
+    const pName = authorName?.toLowerCase().trim();
+    const pUser = authorUsername?.toLowerCase().trim();
+    const isHardcodedPhilippe = 
+      post.authorId === 'gONefSw0DwPvTZBmFFIUn0sau4w2' || 
+      pName === 'philippe boechat' || 
+      pUser === 'philippeboechat2230' ||
+      pUser === 'phdev';
+    
+    return post.authorVerified || post.isVerified || isHardcodedPhilippe || (post.authorId === profile?.uid && profile?.isVerified);
+  }, [post.authorVerified, post.isVerified, post.authorId, authorName, authorUsername, profile?.uid, profile?.isVerified]);
+
   return (
     <div
       ref={viewRef} 
@@ -1107,8 +1151,8 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
             <div className="flex flex-col">
               <Link href={`/profile/${post.authorId}`} className="group/name flex items-center gap-2 flex-wrap">
                 <span className="font-ex-bold text-[18px] text-slate-900 tracking-tight leading-tight group-hover/name:text-primary transition-all duration-300">{authorName}</span>
-                {(authorName === 'Philippe Boechat' || post.authorVerified || post.isVerified) && (
-                  <BadgeCheck className="w-5 h-5 text-indigo-600 fill-indigo-600 text-white" strokeWidth={2.5} />
+                {isAuthorVerified && (
+                  <BadgeCheck className="w-5 h-5 text-indigo-600 fill-indigo-600 text-white shrink-0" strokeWidth={2.5} />
                 )}
                 {post.mood && (
                   <div className="flex items-center gap-1.5 px-2 py-0.5 bg-slate-50 border border-slate-100 rounded-full ml-1">
@@ -1157,7 +1201,7 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
           
           <div className="relative">
             <button 
-              onClick={() => setShowMenu(!showMenu)}
+              onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
               className="w-8 h-8 rounded-full hover:bg-muted flex items-center justify-center text-muted-foreground transition-colors"
             >
               <MoreHorizontal className="w-5 h-5" />
@@ -1263,7 +1307,7 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
                   const hasVoted = post.poll.voters?.includes(authUid);
                   const isExpired = post.poll.expiresAt < Date.now();
                   const showResults = hasVoted || isExpired;
-                  const percentage = post.poll.totalVotes > 0 ? Math.round((option.votes / post.poll.totalVotes) * 100) : 0;
+                  const percentage = post.poll.totalVotes > 0 ? Math.round(((option.votes || 0) / post.poll.totalVotes) * 100) : 0;
                   
                   return (
                     <button
@@ -1281,7 +1325,7 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
                           animate={{ width: `${percentage}%` }}
                           transition={{ duration: 1, ease: 'circOut' }}
                           className={`absolute inset-0 z-0 opacity-15 ${
-                            percentage === Math.max(...post.poll.options.map((o: any) => o.votes)) ? 'bg-primary' : 'bg-slate-400'
+                            percentage === Math.max(...post.poll.options.map((o: any) => o.votes || 0)) ? 'bg-primary' : 'bg-slate-400'
                           }`}
                         />
                       )}
@@ -1290,12 +1334,12 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
                         <div className="flex items-center gap-3">
                           {showResults && (
                              <div className={`w-1.5 h-1.5 rounded-full ${
-                               percentage === Math.max(...post.poll.options.map((o: any) => o.votes)) ? 'bg-primary shadow-[0_0_8px_rgba(122,99,241,0.5)]' : 'bg-slate-300'
+                               percentage === Math.max(...post.poll.options.map((o: any) => o.votes || 0)) ? 'bg-primary shadow-[0_0_8px_rgba(122,99,241,0.5)]' : 'bg-slate-300'
                              }`} />
                           )}
                           <span className={`text-[15px] font-bold transition-colors ${
                             showResults 
-                              ? (percentage === Math.max(...post.poll.options.map((o: any) => o.votes)) ? 'text-slate-900' : 'text-slate-500') 
+                              ? (percentage === Math.max(...post.poll.options.map((o: any) => o.votes || 0)) ? 'text-slate-900' : 'text-slate-500') 
                               : 'text-slate-700 group-hover/option:text-primary'
                           }`}>
                             {option.text}
@@ -1304,7 +1348,7 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
                         {showResults && (
                           <div className="flex flex-col items-end leading-none">
                             <span className={`text-[14px] font-black ${
-                              percentage === Math.max(...post.poll.options.map((o: any) => o.votes)) ? 'text-primary' : 'text-slate-400'
+                              percentage === Math.max(...post.poll.options.map((o: any) => o.votes || 0)) ? 'text-primary' : 'text-slate-400'
                             }`}>
                               {percentage}%
                             </span>
@@ -1352,7 +1396,7 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
                   {sharedPost.authorUsername && (
                     <span className="text-[13px] text-slate-400 font-medium">@{sharedPost.authorUsername}</span>
                   )}
-                  {sharedPost.isVerified && <CheckCircle className="w-4 h-4 text-blue-500 fill-blue-500/10" />}
+                  {(sharedPost.authorVerified || sharedPost.isVerified || sharedPost.authorId === 'gONefSw0DwPvTZBmFFIUn0sau4w2' || sharedPost.authorUsername === 'philippeboechat2230' || sharedPost.authorUsername === 'phdev' || sharedPost.authorName?.toLowerCase().trim() === 'philippe boechat') && <BadgeCheck className="w-4 h-4 text-indigo-600 fill-indigo-600 text-white" strokeWidth={2.5} />}
                 </div>
                 <div className="flex items-center gap-2">
                    <div className="flex items-center gap-1.5 text-[9px] font-black text-primary/60 uppercase tracking-widest bg-primary/5 px-2.5 py-1 rounded-full border border-primary/10 shadow-sm shadow-primary/5">
@@ -1544,24 +1588,24 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
                   <img src={liker.userPhoto || liker.photoURL || liker.avatar || '/default-avatar.png'} alt={liker.userName || liker.displayName} className="w-full h-full object-cover" />
                 </div>
               ))}
-              {(post.likesCount > (likers.length + (userReaction ? 1 : 0))) && (
+              {(likesCount > (likers.length + (userReaction ? 1 : 0))) && (
                 <div className="w-8 h-8 rounded-full border-2 border-white shadow-sm bg-indigo-50 flex items-center justify-center text-[10px] font-bold text-indigo-600 z-10">
-                  +{post.likesCount - likers.length - (userReaction ? 1 : 0)}
+                  +{isNaN(likesCount - likers.length - (userReaction ? 1 : 0)) ? 0 : Math.max(0, likesCount - likers.length - (userReaction ? 1 : 0))}
                 </div>
               )}
             </div>
             <p className="text-[14px] text-slate-500 font-medium">
               {userReaction ? (
-                post.likesCount === 1 ? (
+                likesCount === 1 ? (
                   <>Você curtiu</>
-                ) : post.likesCount === 2 ? (
+                ) : likesCount === 2 ? (
                   <>Você e <span className="font-bold text-slate-900">outra pessoa</span> curtiram</>
                 ) : (
-                  <>Você e outras <span className="font-bold text-slate-900">{post.likesCount - 1}</span> pessoas curtiram</>
+                  <>Você e outras <span className="font-bold text-slate-900">{Math.max(0, likesCount - 1)}</span> pessoas curtiram</>
                 )
               ) : (
-                post.likesCount > 0 ? (
-                  <><span className="font-bold text-slate-900">{post.likesCount}</span> {post.likesCount === 1 ? 'pessoa curtiu' : 'pessoas curtiram'}</>
+                likesCount > 0 ? (
+                  <><span className="font-bold text-slate-900">{likesCount}</span> {likesCount === 1 ? 'pessoa curtiu' : 'pessoas curtiram'}</>
                 ) : (
                   <>Seja o primeiro a curtir</>
                 )
@@ -1571,27 +1615,84 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
           <div className="flex items-center gap-4 text-slate-400">
             <div className="flex items-center gap-1.5 cursor-pointer hover:text-primary transition-colors" onClick={() => setShowComments(!showComments)}>
               <MessageCircle className="w-5 h-5" />
-              <span className="text-[14px] font-medium">{post.commentsCount || 0}</span>
+              <span className="text-[14px] font-medium">{commentsCount}</span>
             </div>
             <div className="flex items-center gap-1.5 cursor-pointer hover:text-primary transition-colors">
               <Repeat2 className="w-5 h-5" />
-              <span className="text-[14px] font-medium">{post.sharesCount || 0}</span>
+              <span className="text-[14px] font-medium">{sharesCount}</span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center justify-between py-2 border-t border-slate-100">
-          <button 
-            onClick={() => activePostReaction ? handlePostReaction(activePostReaction.id) : handlePostReaction('like')}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl transition-all duration-300 ${
-              activePostReaction 
-                ? 'text-rose-500 bg-rose-50/80 shadow-sm' 
-                : 'text-slate-500 hover:bg-slate-50'
-            }`}
+        <div className="flex items-center justify-between py-2 border-t border-slate-100 relative">
+          <div 
+            className="flex-1 relative" 
+            onMouseEnter={handleReactionMouseEnter} 
+            onMouseLeave={handleReactionMouseLeave}
           >
-            <Heart className={`w-5 h-5 md:w-5 md:h-5 ${activePostReaction ? 'fill-current' : ''}`} />
-            <span className="hidden sm:inline text-[15px] font-bold">Curtir</span>
-          </button>
+            <AnimatePresence>
+              {showReactionSelector && (
+                <>
+                  <div className="fixed inset-0 z-40 sm:hidden" onClick={() => setShowReactionSelector(false)} onTouchStart={() => setShowReactionSelector(false)} />
+                  <motion.div
+                    id={`reaction-selector-${post.id}`}
+                    initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.9 }}
+                    className="absolute bottom-full left-0 mb-2 bg-white rounded-[32px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-slate-100 p-2 flex gap-1 z-50 pointer-events-auto"
+                    onMouseEnter={handleReactionMouseEnter}
+                    onMouseLeave={handleReactionMouseLeave}
+                  >
+                    {REACTIONS.map((reaction) => (
+                      <button
+                        key={reaction.id}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handlePostReaction(reaction.id);
+                          setShowReactionSelector(false);
+                        }}
+                        className="group/reaction relative p-2 hover:scale-[1.3] hover:-translate-y-2 transition-all duration-300 origin-bottom flex-shrink-0"
+                      >
+                        <span className="text-3xl drop-shadow-sm relative z-10">{reaction.icon}</span>
+                        <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[11px] font-black tracking-wide px-3 py-1.5 rounded-full opacity-0 group-hover/reaction:opacity-100 transition-opacity whitespace-nowrap shadow-lg">
+                          {reaction.label}
+                        </span>
+                      </button>
+                    ))}
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+
+            <button 
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+              onTouchCancel={handleTouchEnd}
+              onClick={(e) => {
+                if (wasLongPress) {
+                  e.preventDefault();
+                  setWasLongPress(false);
+                  return;
+                }
+                activePostReaction ? handlePostReaction(activePostReaction.id) : handlePostReaction('like');
+              }}
+              className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl transition-all duration-300 ${
+                activePostReaction 
+                  ? `${activePostReaction.color} ${activePostReaction.bgColor} shadow-sm` 
+                  : 'text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              {activePostReaction ? (
+                 <span className="text-xl leading-none drop-shadow-sm">{activePostReaction.icon}</span>
+              ) : (
+                 <Heart className="w-5 h-5 md:w-5 md:h-5" />
+              )}
+              <span className="hidden sm:inline text-[15px] font-bold">
+                {activePostReaction ? activePostReaction.label : 'Curtir'}
+              </span>
+            </button>
+          </div>
           <div className="w-[1px] h-6 bg-slate-100 mx-1" />
           <button 
             onClick={() => setShowComments(!showComments)}

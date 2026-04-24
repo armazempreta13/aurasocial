@@ -582,8 +582,8 @@ export default function CommunityDetailPage() {
           Voltar para comunidades
         </button>
 
-        <div className="group/comm mb-4 md:mb-8 rounded-[24px] md:rounded-[40px] border border-border/40 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.05)] relative">
-          <div className="relative h-[180px] md:h-[220px] z-40">
+        <div className="group/comm mb-4 md:mb-8 rounded-[24px] md:rounded-[40px] border border-border/40 bg-white shadow-[0_20px_60px_rgba(0,0,0,0.05)] relative overflow-visible z-40">
+          <div className="relative h-[180px] md:h-[220px] z-40 overflow-visible">
             <div className="absolute inset-0 overflow-hidden rounded-t-[24px] md:rounded-t-[40px] z-0" style={coverStyle}>
               {community.coverURL ? (
                 <Image
@@ -603,8 +603,7 @@ export default function CommunityDetailPage() {
               <div className="flex flex-col md:flex-row items-start md:items-end gap-3 md:gap-4">
                 <div className="relative shrink-0">
                   <div 
-                    className="flex h-20 w-20 md:h-24 md:w-24 items-center justify-center rounded-[24px] md:rounded-[32px] border-4 border-white text-2xl md:text-3xl font-black text-white shadow-xl overflow-hidden"
-                    style={{ backgroundColor: themeColor }}
+                    className="relative flex h-20 w-20 md:h-24 md:w-24 items-center justify-center rounded-[28px] md:rounded-[36px] bg-white shadow-[0_15px_40px_rgba(0,0,0,0.2)] overflow-hidden ring-4 ring-white/10 text-2xl md:text-3xl font-black text-slate-800"
                   >
                     {community.image ? (
                       <Image
@@ -643,7 +642,7 @@ export default function CommunityDetailPage() {
                   </div>
                 </div>
 
-                <div className="mt-2 flex w-full md:w-auto shrink-0 gap-2 md:gap-3 overflow-x-auto no-scrollbar pb-1 md:pb-0">
+                <div className="mt-2 flex w-full md:w-auto shrink-0 gap-2 md:gap-3 flex-wrap md:flex-nowrap pb-1 md:pb-0">
                   <button
                     onClick={handleInvite}
                     className="flex h-10 md:h-11 items-center gap-1 md:gap-2 rounded-xl md:rounded-2xl border border-white/30 bg-white/10 px-3 md:px-5 text-[12px] md:text-[13px] font-black text-white backdrop-blur-md transition-all hover:bg-white/20 active:scale-95 whitespace-nowrap"
@@ -660,7 +659,7 @@ export default function CommunityDetailPage() {
                     <span className="hidden md:inline">Compartilhar</span>
                   </button>
 
-                  <div className="relative group/actions w-full md:w-auto">
+                  <div className="relative group/actions shrink-0">
                     <button
                       onClick={() => setShowMemberMenu(!showMemberMenu)}
                       disabled={!isMember && joinRequestPending && community?.security?.requireApproval}
@@ -672,17 +671,19 @@ export default function CommunityDetailPage() {
                               boxShadow: `0 12px 24px ${hexToRgba(themeColor, 0.4)}`,
                             }
                           : {
-                              backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                              backdropFilter: 'blur(12px)',
+                              backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                              backdropFilter: 'blur(20px)',
+                              border: '1px solid rgba(255, 255, 255, 0.2)',
+                              boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
                             }
                       }
                     >
                       {isMember ? (
-                        <>
+                        <div className="flex items-center gap-2 drop-shadow-sm">
                           <Check className="h-4 w-4" />
                           <span>Entrou</span>
-                          <ChevronDown className={`h-4 w-4 transition-transform ${showMemberMenu ? 'rotate-180' : ''}`} />
-                        </>
+                          <ChevronDown className={`h-4 w-4 transition-transform duration-300 ${showMemberMenu ? 'rotate-180' : ''}`} />
+                        </div>
                       ) : joinRequestPending && community?.security?.requireApproval ? (
                         'Pendente'
                       ) : (
@@ -691,27 +692,31 @@ export default function CommunityDetailPage() {
                     </button>
 
                     {isMember && showMemberMenu && (
-                      <div className="absolute right-0 top-full mt-2 w-56 z-[100] animate-in fade-in slide-in-from-top-2 duration-200">
-                        <div className="rounded-2xl border border-border/40 bg-white/95 p-2 shadow-2xl backdrop-blur-xl">
+                      <div className="absolute right-0 top-full mt-2 w-64 z-[1000] animate-in fade-in zoom-in-95 slide-in-from-top-4 duration-300">
+                        <div className="rounded-[28px] border border-slate-200 bg-white p-2 shadow-[0_30px_60px_rgba(0,0,0,0.25)]">
                           <button
                             onClick={() => {
                               setShowMemberMenu(false);
                               void toggleMute();
                             }}
-                            className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[13px] font-bold text-slate-800 transition-all hover:bg-slate-100"
+                            className="flex w-full items-center gap-3 rounded-2xl px-5 py-4 text-left text-[14px] font-bold text-slate-800 transition-all hover:bg-slate-100 active:scale-[0.98]"
                           >
-                            <Bell className={`h-4 w-4 ${muted ? 'text-red-500' : 'text-primary'}`} />
+                            <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${muted ? 'bg-rose-100' : 'bg-primary/10'}`}>
+                              <Bell className={`h-4 w-4 ${muted ? 'text-rose-500' : 'text-primary'}`} />
+                            </div>
                             {muted ? 'Ativar notificações' : 'Silenciar espaço'}
                           </button>
-                          <div className="h-px bg-slate-100 my-1 mx-2" />
+                          <div className="h-px bg-slate-100 my-1 mx-2 opacity-50" />
                           <button
                             onClick={() => {
                               setShowMemberMenu(false);
                               setIsLeaveModalOpen(true);
                             }}
-                            className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[13px] font-bold text-red-500 transition-all hover:bg-red-50"
+                            className="flex w-full items-center gap-3 rounded-2xl px-5 py-4 text-left text-[14px] font-bold text-rose-500 transition-all hover:bg-rose-50 active:scale-[0.98]"
                           >
-                            <LogOut className="h-4 w-4" />
+                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-100">
+                              <LogOut className="h-4 w-4" />
+                            </div>
                             Sair da comunidade
                           </button>
                         </div>
@@ -920,7 +925,7 @@ export default function CommunityDetailPage() {
           </div>
         </div>
 
-        {weeklyHighlight?.postTitle && (
+        {weeklyHighlight?.postTitle && activeTab !== 'highlights' && (
           <div
             className="group/highlight mb-8 overflow-hidden rounded-2xl border border-border/40 bg-white shadow-sm transition-all hover:shadow-md"
           >
@@ -933,7 +938,7 @@ export default function CommunityDetailPage() {
                   href={`/post/${weeklyHighlight.postId}`}
                   className="truncate text-[14px] font-bold text-slate-900 transition-colors hover:text-primary"
                 >
-                  “{renderTextWithLinks(weeklyHighlight.postTitle)}”
+                  {renderTextWithLinks(`“${weeklyHighlight.postTitle}”`, { inline: true })}
                 </Link>
 
                 {weeklyHighlight.memberName && (
@@ -1033,7 +1038,7 @@ export default function CommunityDetailPage() {
                       <div className="mb-6 rounded-[28px] border border-border/50 bg-white p-6 shadow-sm">
                         <p className="text-sm font-black uppercase tracking-widest text-muted-foreground">Em destaque</p>
                         <Link href={`/post/${weeklyHighlight.postId}`} className="mt-2 block text-[16px] font-extrabold text-foreground hover:text-primary">
-                          {renderTextWithLinks(weeklyHighlight.postTitle || '')}
+                          {renderTextWithLinks(weeklyHighlight.postTitle || '', { inline: true })}
                         </Link>
                         {weeklyHighlight.memberName ? (
                           <p className="mt-2 text-sm font-semibold text-muted-foreground">

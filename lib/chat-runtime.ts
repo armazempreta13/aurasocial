@@ -212,6 +212,7 @@ export async function fetchMessagesForChat(chatId: string): Promise<ChatMessage[
  */
 export async function ensureRuntimeChat(
   participants: string[],
+  metadata?: Record<string, { displayName: string; photoURL?: string }>
 ): Promise<Record<string, unknown>> {
   assertParticipants(participants);
 
@@ -227,6 +228,7 @@ export async function ensureRuntimeChat(
 
     const chatData = {
       participants: sortedParticipants,
+      participantMetadata: metadata || {},
       updatedAt: serverTimestamp(),
       createdAt: serverTimestamp(),
       lastMessage: '',
@@ -251,6 +253,7 @@ interface PostMessageParams {
   text: string;
   type?: 'text' | 'image';
   attachmentUrl?: string;
+  senderMetadata?: { displayName: string; photoURL?: string };
 }
 
 /**
@@ -286,8 +289,9 @@ export async function postRuntimeMessage(
     await updateDoc(chatRef, {
       lastMessage: type === 'image' ? '📷 Foto' : text,
       lastMessageTime: serverTimestamp(),
-      lastMessageSenderId: senderId,     // Used by ChatProvider for notification detection
+      lastMessageSenderId: senderId,
       updatedAt: serverTimestamp(),
+      ...(params.senderMetadata ? { [`participantMetadata.${senderId}`]: params.senderMetadata } : {}),
     });
 
     return {
@@ -361,9 +365,11 @@ export function buildChatList(
       const otherUid: string =
         (chat.participants as string[]).find((p) => p !== viewerUid) ?? viewerUid;
 
+      const metadata = chat.participantMetadata?.[otherUid];
       const otherUser: ChatUserPreview = userMap.get(otherUid) ?? {
         uid: otherUid,
-        displayName: 'Carregando...',
+        displayName: metadata?.displayName || 'Carregando...',
+        photoURL: metadata?.photoURL,
       };
 
       return {

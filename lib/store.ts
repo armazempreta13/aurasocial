@@ -24,6 +24,8 @@ interface UserProfile {
   relationshipSettings?: RelationshipSettings;
   onboardingCompleted?: boolean;
   username?: string;
+  isVerified?: boolean;
+  role?: string;
 }
 
 interface AppState {

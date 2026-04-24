@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
-import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff } from 'lucide-react';
+import { Phone, PhoneOff, Video, VideoOff, Mic, MicOff, X } from 'lucide-react';
 import { auth } from '@/firebase';
 
 const ICE_SERVERS = [
@@ -29,6 +29,7 @@ export function CallManager() {
   const [isMuted, setIsMuted]           = useState(false);
   const [isCamOff, setIsCamOff]         = useState(false);
   const [callDuration, setCallDuration] = useState(0);
+  const [callError, setCallError]       = useState<string | null>(null);
 
   // Refs espelham estado para usar dentro de callbacks/intervals sem stale closure
   const callStateRef  = useRef<CallState>('idle');
@@ -85,6 +86,7 @@ export function CallManager() {
     setCallDuration(0);
     setIsMuted(false);
     setIsCamOff(false);
+    setCallError(null);
   }, []);
 
   // createPC recebe remoteUserId como parâmetro — não depende de callInfo no closure,
@@ -180,16 +182,22 @@ export function CallManager() {
       });
     } catch (e) {
       console.error('[WebRTC] startCall error:', e);
+      let errorMsg = 'Falha ao iniciar chamada';
       if (e instanceof Error) {
         if (e.name === 'NotFoundError') {
-          console.error('[WebRTC] Dispositivo não encontrado - verifique se câmera/microfone estão conectados');
-        } else if (e.name === 'PermissionDenied') {
-          console.error('[WebRTC] Permissão negada para acessar câmera/microfone');
-        } else if (e.name === 'NotAllowedError') {
-          console.error('[WebRTC] Acesso não permitido - dispositivo pode estar em uso');
+          errorMsg = 'Dispositivo não encontrado - verifique se câmera/microfone estão conectados';
+        } else if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+          errorMsg = 'Permissão negada para acessar câmera/microfone';
+        } else if (e.name === 'NotReadableError') {
+          errorMsg = 'Acesso não permitido - dispositivo pode estar em uso';
         }
       }
-      cleanUp();
+      setCallError(errorMsg);
+      // Don't cleanUp immediately if we want to show the error UI
+      // But we need to stop the tracks
+      localStream.current?.getTracks().forEach(t => t.stop());
+      setCallState('ended'); 
+      setTimeout(cleanUp, 5000); // Auto close after 5s
     }
   }, [createPC, sendSignal, cleanUp]);
 
@@ -340,7 +348,16 @@ export function CallManager() {
   // ─── UI ────────────────────────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-xl animate-in fade-in duration-300">
-      <div className="relative w-full max-w-md mx-4 bg-[#0f0f12] rounded-[40px] overflow-hidden shadow-[0_40px_120px_rgba(0,0,0,0.8)] border border-white/5">
+      <div className="relative w-full max-w-md mx-4 bg-[#0f0f12] rounded-[40px] overflow-hidden shadow-[0_40px_120px_rgba(0,0,0,0.8)] border border-white/5 p-1">
+        
+        {/* Botão de Fechar / Cancelar */}
+        <button 
+          onClick={cleanUp}
+          className="absolute top-6 right-6 z-[60] w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/40 hover:text-white transition-all backdrop-blur-md border border-white/5"
+          aria-label="Fechar"
+        >
+          <X size={20} />
+        </button>
 
         {/* Vídeo remoto — só renderiza em modo vídeo */}
         {callInfo?.mode === 'video' && (
@@ -397,11 +414,11 @@ export function CallManager() {
             <h2 className="text-2xl font-black text-white tracking-tight">
               {callInfo?.remoteUserName}
             </h2>
-            <p className="text-sm font-semibold text-white/50 mt-1 uppercase tracking-widest">
+            <p className={`text-sm font-semibold mt-2 uppercase tracking-[0.2em] px-6 ${callError ? 'text-red-400 bg-red-400/10 py-2 rounded-2xl border border-red-400/20' : 'text-white/50'}`}>
               {callState === 'calling'   && 'Chamando...'}
               {callState === 'incoming'  && `${callInfo?.mode === 'video' ? 'Chamada de vídeo' : 'Chamada de áudio'} recebida`}
               {callState === 'connected' && formatDuration(callDuration)}
-              {callState === 'ended'     && 'Chamada encerrada'}
+              {callState === 'ended'     && (callError || 'Chamada encerrada')}
             </p>
           </div>
 

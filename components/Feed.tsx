@@ -293,6 +293,8 @@ export function Feed({
       if (!exists && status === 'success' && allPosts.length > 0) {
         setNewPostsAvailable(prev => Array.from(new Set([...prev, latestId])));
       }
+    }, (error) => {
+      console.warn('Feed: Real-time sync interrupted:', error);
     });
   }, [allPosts, userId, communityId, normalizedSearchQuery, feedMode, status]);
 

@@ -18,14 +18,6 @@ export default function HandleRedirectPage() {
   const [error, setError] = useState(false);
   const { user, isAuthReady } = useRequireAuth();
 
-  if (!isAuthReady || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
-      </div>
-    );
-  }
-
   // Decode the handle - the @ might be URL encoded as %40
   const decodedHandle = decodeURIComponent(handle);
 
@@ -67,6 +59,14 @@ export default function HandleRedirectPage() {
 
     findUser();
   }, [decodedHandle, router]);
+
+  if (!isAuthReady || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
+      </div>
+    );
+  }
 
   if (error) {
     // If it's not a handle or not found, we should probably trigger a 404

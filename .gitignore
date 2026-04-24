@@ -7,5 +7,6 @@ build/
 coverage/
 .DS_Store
 *.log
+*.zip
 .env*
 !.env.example

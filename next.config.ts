@@ -33,12 +33,12 @@ const nextConfig: NextConfig = {
     return [
       {
         // Apply security headers to all routes. 
-        // Cross-Origin-Opener-Policy is set to unsafe-none to allow Firebase Auth popups.
+        // Cross-Origin-Opener-Policy is set to same-origin-allow-popups to allow Firebase Auth popups.
         source: '/:path*',
         headers: [
           {
             key: 'Cross-Origin-Opener-Policy',
-            value: 'unsafe-none',
+            value: 'same-origin-allow-popups',
           },
           {
             key: 'Cross-Origin-Embedder-Policy',
@@ -60,7 +60,7 @@ const nextConfig: NextConfig = {
       },
     ];
   },
-  transpilePackages: ['motion'],
+  transpilePackages: ['motion', 'firebase', 'browser-image-compression'],
   webpack: (config, {dev}) => {
     // HMR is disabled in AI Studio via DISABLE_HMR env var.
     // Do not modify—file watching is disabled to prevent flickering during agent edits.

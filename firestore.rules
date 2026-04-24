@@ -642,7 +642,7 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidLike() && uidUnchanged('userId');
       allow update: if isAuthenticated() && isValidLike() && uidNotModified('userId');
-      allow delete: if isAuthenticated() && resource.data.userId == currentUid();
+      allow delete: if isAuthenticated() && (resource == null || resource.data.userId == currentUid());
     }
 
     // ===============================================================

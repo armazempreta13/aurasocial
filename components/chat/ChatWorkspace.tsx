@@ -97,6 +97,8 @@ export function ChatWorkspace() {
         sendMessage,
         subscribeToChat,
         openChatWithUser,
+        sendTyping,
+        currentChat,
     } = useChat();
 
     const [searchQuery, setSearchQuery] = useState('');
@@ -110,13 +112,29 @@ export function ChatWorkspace() {
         }
     }, [initialChatId]);
 
-    const currentChat = useMemo(() => 
-        chats.find(c => c.id === pageChatId), 
-    [chats, pageChatId]);
-
     const activeMessages = useMemo(() => 
         pageChatId ? (messagesByChat[pageChatId] || []) : [], 
     [messagesByChat, pageChatId]);
+
+    // ── SEARCH LOGIC ──
+    const filteredChats = useMemo(() => {
+        if (!searchQuery.trim()) return chats;
+        const q = searchQuery.toLowerCase();
+        return chats.filter(c => 
+            c.otherUser?.displayName?.toLowerCase().includes(q) ||
+            c.otherUser?.username?.toLowerCase().includes(q) ||
+            c.lastMessage?.toLowerCase().includes(q)
+        );
+    }, [chats, searchQuery]);
+
+    const filteredSuggestions = useMemo(() => {
+        if (!searchQuery.trim()) return suggestions;
+        const q = searchQuery.toLowerCase();
+        return suggestions.filter(u => 
+            u.displayName?.toLowerCase().includes(q) ||
+            u.username?.toLowerCase().includes(q)
+        );
+    }, [suggestions, searchQuery]);
 
     const handleSendMessage = useCallback(async () => {
         if (!pageChatId || !composerValue.trim()) return;
@@ -143,8 +161,8 @@ export function ChatWorkspace() {
                     </div>
 
                     <ChatList
-                        chats={chats}
-                        suggestions={suggestions}
+                        chats={filteredChats}
+                        suggestions={filteredSuggestions}
                         selectedChatId={pageChatId}
                         onSelectChat={async (id) => {
                             // Check if it's already a chat ID (contains __ or is in chats)
@@ -175,7 +193,10 @@ export function ChatWorkspace() {
                             messages={activeMessages}
                             profile={profile}
                             composerValue={composerValue}
-                            onComposerChange={setComposerValue}
+                            onComposerChange={(val) => {
+                                setComposerValue(val);
+                                if (pageChatId) sendTyping(pageChatId, val.trim().length > 0);
+                            }}
                             onSend={handleSendMessage}
                             onUpload={async (file) => {
                                 const res = await uploadImage(file);

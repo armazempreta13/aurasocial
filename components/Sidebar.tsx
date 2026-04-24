@@ -75,7 +75,7 @@ export function Sidebar() {
     <div className="flex flex-col gap-2">
       {profile && (
         <Link 
-          href={`/profile/${profile.uid}`}
+          href="/feed"
           className="flex items-center gap-3 w-full p-2.5 rounded-xl hover:bg-white hover:shadow-sm transition-all group"
         >
           <div className="w-10 h-10 rounded-full bg-gray-200 overflow-hidden shrink-0 ring-2 ring-transparent group-hover:ring-primary/20 transition-all">
@@ -89,7 +89,7 @@ export function Sidebar() {
           </div>
           <div className="flex flex-col items-start">
             <span className="font-extrabold text-[15.5px] text-slate-900 leading-tight">{profile.displayName}</span>
-            <span className="text-[12px] font-bold text-[#8a94a6] hover:text-[#7a63f1] transition-colors">{t('sidebar.view_profile', 'Ver Perfil')}</span>
+            <span className="text-[12px] font-bold text-[#8a94a6] hover:text-[#7a63f1] transition-colors">{t('sidebar.home', 'Início')}</span>
           </div>
         </Link>
       )}

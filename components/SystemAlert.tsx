@@ -25,8 +25,8 @@ export function SystemAlert() {
         const data = snapshot.docs[0].data();
         const id = snapshot.docs[0].id;
         
-        // Verifica se já não fechamos esta notificação específica nesta sessão
-        const dismissed = sessionStorage.getItem(`dismissed_system_notif_${id}`);
+        // Verifica se já não fechamos esta notificação específica permanentemente
+        const dismissed = localStorage.getItem(`dismissed_system_notif_${id}`);
         if (!dismissed) {
           setNotification({ ...data, id });
           setIsVisible(true);
@@ -35,14 +35,25 @@ export function SystemAlert() {
         setNotification(null);
         setIsVisible(false);
       }
+    }, (err) => {
+      console.error('System notification listener error:', err);
     });
 
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (isVisible && notification) {
+      const timer = setTimeout(() => {
+        setIsVisible(false);
+      }, 10000); // 10 segundos
+      return () => clearTimeout(timer);
+    }
+  }, [isVisible, notification]);
+
   const dismiss = () => {
     if (notification) {
-      sessionStorage.setItem(`dismissed_system_notif_${notification.id}`, 'true');
+      localStorage.setItem(`dismissed_system_notif_${notification.id}`, 'true');
     }
     setIsVisible(false);
   };

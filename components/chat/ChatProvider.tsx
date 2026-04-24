@@ -23,6 +23,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/firebase';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/lib/store';
 import { useSignaling } from '@/components/SignalingProvider';
 import {
@@ -63,6 +64,7 @@ interface ChatContextValue {
   sendMessage: (chatId: string, text: string, type?: 'text' | 'image', attachmentUrl?: string) => Promise<void>;
   sendTyping: (chatId: string, isTyping: boolean) => void;
   subscribeToChat: (chatId: string) => void;
+  currentChat: ChatListItem | null;
 }
 
 const ChatContext = createContext<ChatContextValue | undefined>(undefined);
@@ -77,9 +79,26 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const { sendSignal } = useSignaling();
 
   const [loading, setLoading] = useState(false);
-  const [users, setUsers] = useState<ChatUserPreview[]>([]);
+  const [users, setUsers] = useState<ChatUserPreview[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      const cached = localStorage.getItem('aura_user_cache');
+      return cached ? JSON.parse(cached) : [];
+    } catch (e) {
+      return [];
+    }
+  });
   const [chatRows, setChatRows] = useState<Record<string, any>[]>([]);
   const [unreadMap, setUnreadMap] = useState<Record<string, number>>({});
+
+  // Update localStorage whenever users state changes
+  useEffect(() => {
+    if (users.length > 0) {
+      try {
+        localStorage.setItem('aura_user_cache', JSON.stringify(users.slice(0, 100))); 
+      } catch (e) {}
+    }
+  }, [users]);
   const [messagesByChat, setMessagesByChat] = useState<Record<string, ChatMessage[]>>({});
   const [typingByChat, setTypingByChat] = useState<Record<string, boolean>>({});
   const [messagesHubOpen, setMessagesHubOpen] = useState(false);
@@ -103,9 +122,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const minimizedChatIdsRef = useRef<string[]>([]);
   useEffect(() => { minimizedChatIdsRef.current = minimizedChatIds; }, [minimizedChatIds]);
 
-  // ── Sound ──────────────────────────────────────────────────────────────────
   const playPop = useCallback(() => {
     soundEffects.play('pop');
+  }, []);
+
+  const playNotification = useCallback(() => {
+    soundEffects.play('notification');
   }, []);
 
   // ── Derived chat list ──────────────────────────────────────────────────────
@@ -166,6 +188,25 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           };
         });
 
+        // Fetch initial unread counts if this is the first load
+        if (prevChatRowsRef.current.length === 0 && rows.length > 0) {
+          rows.forEach((row) => {
+            const unreadQ = query(
+              collection(db, 'chats', row.id, 'messages'),
+              where('senderId', '!=', uid),
+              where('read', '==', false)
+            );
+            import('firebase/firestore').then(({ getCountFromServer }) => {
+              getCountFromServer(unreadQ).then((countSnap) => {
+                const count = countSnap.data().count;
+                if (count > 0) {
+                  setUnreadMap((prev) => ({ ...prev, [row.id]: count }));
+                }
+              }).catch(() => {});
+            });
+          });
+        }
+
         // ── New message detection ─────────────────────────────────────────
         // FIX 5: collect IDs of chats with new incoming messages,
         // then open them via a queued microtask — NEVER call setState/openChatById
@@ -195,7 +236,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         if (toAutoOpen.length > 0) {
           // Use queueMicrotask to run after the current synchronous block
           queueMicrotask(() => {
-            playPop();
+            playNotification();
             toAutoOpen.forEach((chatId) => {
               // Only auto-open if the user hasn't minimized the chat intentionally
               if (!minimizedChatIdsRef.current.includes(chatId)) {
@@ -209,14 +250,26 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           });
         }
       },
-      (error) => console.warn('Chat list listener error:', error),
+      (error) => console.error('Chat list listener error:', error),
     );
 
     return () => {
       unsubscribe();
       updateDoc(userRef, { status: 'offline', lastSeen: serverTimestamp() }).catch(console.warn);
     };
-  }, [profile?.uid, playPop]);
+  }, [profile?.uid, playNotification]);
+  
+  // ── Browser notification: update title with unread count ───────────────────
+  useEffect(() => {
+    const total = Object.values(unreadMap).reduce((a, b) => a + b, 0);
+    if (typeof document === 'undefined') return;
+    const original = document.title.replace(/^\(\d+\)\s/, '');
+    if (total > 0) {
+      document.title = `(${total}) ${original}`;
+    } else {
+      document.title = original;
+    }
+  }, [unreadMap]);
 
   // ── Real-time: user presence for each participant ──────────────────────────
   // FIX 6: depends only on chatRows — removed floatingChatIds from deps.
@@ -231,6 +284,36 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const otherUid = (row.participants as string[]).find((p: string) => p !== uid);
       if (otherUid) uidsToTrack.add(otherUid);
     });
+
+    // ── Bulk fetch missing users first ──
+    const missingUids = Array.from(uidsToTrack).filter(id => !users.some(u => u.uid === id));
+    if (missingUids.length > 0) {
+      // Firestore 'in' query limit is 30. If more, split or just ignore (snapshots will eventually catch up)
+      const batch = missingUids.slice(0, 30);
+      import('firebase/firestore').then(({ getDocs, collection, where, query }) => {
+        const q = query(collection(db, 'users'), where('__name__', 'in', batch));
+        getDocs(q).then(snap => {
+          const fetched: ChatUserPreview[] = snap.docs.map(d => {
+            const data = d.data();
+            return {
+              uid: d.id,
+              displayName: data.displayName || (data.username ? `@${data.username}` : 'Usuário'),
+              photoURL: data.photoURL,
+              username: data.username,
+              status: data.status ?? 'offline',
+              lastSeen: data.lastSeen?.toMillis?.() ?? 0,
+            };
+          });
+          setUsers(prev => {
+            const next = [...prev];
+            fetched.forEach(u => {
+              if (!next.some(n => n.uid === u.uid)) next.push(u);
+            });
+            return next;
+          });
+        }).catch(console.warn);
+      });
+    }
 
     uidsToTrack.forEach((otherUid) => {
       if (userListenersRef.current[otherUid]) return; // already subscribed
@@ -265,6 +348,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           }
           return [...prev, updated];
         });
+      }, (err) => {
+        console.error('Chat user presence listener error:', err);
       });
 
       userListenersRef.current[otherUid] = unsub;
@@ -307,6 +392,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             } as ChatMessage),
         );
         setMessagesByChat((prev) => ({ ...prev, [chatId]: rows }));
+      }, (err) => {
+        console.error('Chat messages listener error:', err);
       });
 
       messageListenersRef.current[chatId] = unsubscribe;
@@ -337,7 +424,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     async (user: ChatUserPreview, mode: OpenChatMode = 'floating') => {
       if (!profile?.uid || !user?.uid) return null;
       setUsers((prev) => (prev.some((u) => u.uid === user.uid) ? prev : [...prev, user]));
-      const runtimeChat = await ensureRuntimeChat([profile.uid, user.uid]);
+      
+      const runtimeChat = await ensureRuntimeChat([profile.uid, user.uid], {
+        [profile.uid]: { displayName: profile.displayName, photoURL: profile.photoURL },
+        [user.uid]: { displayName: user.displayName, photoURL: user.photoURL }
+      });
+      
       const chatId = runtimeChat.id as string;
       openChatById(chatId, mode);
       return chatId;
@@ -387,10 +479,43 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       if (!uid) return;
       const chat = chats.find((c) => c.id === chatId);
       if (!chat) return;
-      await postRuntimeMessage({ chatId, senderId: uid, text, type, attachmentUrl });
+
+      // Optimistic update for instant UI feedback
+      const optimisticMsg: ChatMessage = {
+        id: `opt_${Date.now()}`,
+        chatId,
+        senderId: uid,
+        text,
+        type,
+        attachmentUrl,
+        createdAt: Date.now(),
+        read: false
+      };
+      
+      setMessagesByChat((prev) => {
+        const currentMessages = prev[chatId] || [];
+        // Avoid duplicates if user spams send
+        if (currentMessages.some(m => m.id === optimisticMsg.id)) return prev;
+        return {
+          ...prev,
+          [chatId]: [...currentMessages, optimisticMsg]
+        };
+      });
+
+      // Sound feedback for sending (subtle interaction cue)
+      soundEffects.play('pop');
+
+      await postRuntimeMessage({ 
+        chatId, 
+        senderId: uid, 
+        text, 
+        type, 
+        attachmentUrl,
+        senderMetadata: { displayName: profile.displayName, photoURL: profile.photoURL }
+      });
       sendSignal(chat.otherUser?.uid ?? '', 'typing-status', { chatId, isTyping: false });
     },
-    [chats, sendSignal],
+    [chats, sendSignal, profile],
   );
 
   // ── Hub ────────────────────────────────────────────────────────────────────
@@ -537,6 +662,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       sendMessage,
       sendTyping,
       subscribeToChat,
+      currentChat: chats.find(c => c.id === pageChatId) || null,
     }),
     [
       chats,
@@ -776,44 +902,81 @@ function ChatOverlay() {
         })}
       </div>
 
-      {/* ── Minimized chat bubbles ─────────────────────────────────────────── */}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-[69] hidden flex-col items-end gap-2 xl:flex">
-        {minimizedChats.map((chat) => {
-          const isOnline = chat.otherUser?.status === 'online';
-          return (
-            <button
-              key={chat.id}
-              onClick={() => restoreFloatingChat(chat.id)}
-              className="pointer-events-auto flex items-center gap-3 rounded-full border border-slate-200 bg-white px-3 py-2 shadow-lg shadow-slate-200/60 transition-all hover:-translate-y-0.5 hover:shadow-xl"
-            >
-              <div className="relative flex-shrink-0">
-                <img
-                  src={avatarSrc(chat.otherUser)}
-                  alt={chat.otherUser?.displayName}
-                  className="h-10 w-10 rounded-full object-cover"
-                />
-                <span
-                  className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white transition-colors duration-500 ${
-                    isOnline ? 'bg-green-500' : 'bg-slate-300'
-                  }`}
-                />
-              </div>
-              <div className="text-left">
-                <p className="max-w-[140px] truncate text-[13px] font-bold text-slate-900">
-                  {chat.otherUser?.displayName}
-                </p>
-                <p className="max-w-[140px] truncate text-[11px] text-slate-500">
-                  {chat.lastMessage || 'Nova mensagem'}
-                </p>
-              </div>
-              {chat.unreadCount > 0 && (
-                <span className="flex min-h-[22px] min-w-[22px] items-center justify-center rounded-full bg-pink-500 px-1 text-[10px] font-black text-white animate-in zoom-in duration-300">
-                  {chat.unreadCount > 9 ? '9+' : chat.unreadCount}
-                </span>
-              )}
-            </button>
-          );
-        })}
+      <div className="pointer-events-none fixed bottom-6 right-6 z-[80] hidden flex-col items-end gap-3 xl:flex">
+        <AnimatePresence mode="popLayout">
+          {minimizedChats.map((chat) => {
+            const isOnline = chat.otherUser?.status === 'online';
+            const initials = chat.otherUser?.displayName
+              ?.split(' ')
+              .map((n) => n[0])
+              .join('')
+              .toUpperCase()
+              .slice(0, 2) || '?';
+
+            return (
+              <motion.button
+                key={chat.id}
+                layout
+                initial={{ opacity: 0, x: 20, scale: 0.9 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: 20, scale: 0.9 }}
+                whileHover={{ scale: 1.02, y: -2 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => restoreFloatingChat(chat.id)}
+                className="pointer-events-auto group relative flex items-center gap-4 rounded-[22px] border border-white/40 bg-white/80 p-3.5 shadow-[0_12px_40px_rgba(0,0,0,0.08)] backdrop-blur-xl transition-shadow hover:shadow-[0_20px_50px_rgba(0,0,0,0.12)]"
+              >
+                {/* Avatar section */}
+                <div className="relative flex-shrink-0">
+                  <div className="relative h-12 w-12 overflow-hidden rounded-[16px] bg-gradient-to-br from-indigo-50 to-slate-100 shadow-sm ring-1 ring-black/5">
+                    {chat.otherUser?.photoURL ? (
+                      <img
+                        src={chat.otherUser.photoURL}
+                        alt={chat.otherUser.displayName}
+                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-600 text-[14px] font-bold text-white">
+                        {initials}
+                      </div>
+                    )}
+                    
+                    {/* Subtle inner glow */}
+                    <div className="pointer-events-none absolute inset-0 rounded-[16px] ring-1 ring-inset ring-white/20" />
+                  </div>
+
+                  {/* Status indicator integrated into avatar */}
+                  <div className="absolute -bottom-1 -right-1 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-white shadow-sm">
+                    <div
+                      className={`h-2.5 w-2.5 rounded-full ring-1 ring-black/5 ${
+                        isOnline ? 'bg-emerald-500' : 'bg-slate-300'
+                      } ${isOnline ? 'animate-[pulse_2s_infinite]' : ''}`}
+                    />
+                  </div>
+                </div>
+
+                {/* Text content with clear hierarchy */}
+                <div className="flex flex-col pr-2 text-left">
+                  <span className="text-[14.5px] font-bold tracking-tight text-slate-900">
+                    {chat.otherUser?.displayName}
+                  </span>
+                  <span className="max-w-[150px] truncate text-[12px] font-medium text-slate-500/80">
+                    {chat.lastMessage || 'Nova mensagem'}
+                  </span>
+                </div>
+
+                {/* Unread badge (compact & refined) */}
+                {chat.unreadCount > 0 && (
+                  <div className="flex h-5.5 min-w-[22px] items-center justify-center rounded-full bg-indigo-600 px-1.5 text-[10px] font-black tracking-tighter text-white shadow-[0_2px_10px_rgba(79,70,229,0.3)]">
+                    {chat.unreadCount > 9 ? '9+' : chat.unreadCount}
+                  </div>
+                )}
+                
+                {/* Premium Glow effect on hover */}
+                <div className="absolute inset-0 -z-10 rounded-[22px] bg-indigo-400/5 opacity-0 blur-xl transition-opacity group-hover:opacity-100" />
+              </motion.button>
+            );
+          })}
+        </AnimatePresence>
       </div>
     </>
   );

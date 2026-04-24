@@ -22,14 +22,6 @@ function ExploreContent() {
   const [isSearchingUsers, setIsSearchingUsers] = useState(false);
   const [trendingTags, setTrendingTags] = useState<string[]>([]);
 
-  if (!isAuthReady || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
-      </div>
-    );
-  }
-
   useEffect(() => {
     if (!searchQuery) return;
     const fetchUsers = async () => {

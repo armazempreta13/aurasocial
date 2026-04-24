@@ -14,7 +14,8 @@ import {
   addDoc,
   serverTimestamp,
   getDoc,
-  getCountFromServer
+  getCountFromServer,
+  writeBatch
 } from 'firebase/firestore';
 import { 
   Search, 
@@ -135,6 +136,38 @@ export default function AdminUsers() {
     }
   };
 
+  const toggleUserVerification = async (user: any) => {
+    const newStatus = !user.isVerified;
+    if (!confirm(`Deseja ${newStatus ? 'VERIFICAR' : 'REMOVER VERIFICAÇÃO de'} o usuário ${user.displayName}?`)) return;
+    
+    try {
+      await updateDoc(doc(db, 'users', user.id), {
+        isVerified: newStatus,
+        verifiedAt: newStatus ? serverTimestamp() : null
+      });
+
+      // Atualizar o status de verificação em todos os posts do usuário
+      const postsQuery = query(collection(db, 'posts'), where('authorId', '==', user.id));
+      const postsSnapshot = await getDocs(postsQuery);
+      if (!postsSnapshot.empty) {
+        const batch = writeBatch(db);
+        postsSnapshot.forEach((postDoc) => {
+          batch.update(postDoc.ref, { authorVerified: newStatus });
+        });
+        await batch.commit();
+      }
+
+      await logAdminAction(newStatus ? 'Verificação' : 'Remoção de Verificação', user.id, `Status de verificação alterado para ${user.email}`);
+      
+      // Update local state
+      setUsers(users.map(u => u.id === user.id ? { ...u, isVerified: newStatus } : u));
+      if (selectedUser?.id === user.id) setSelectedUser({ ...selectedUser, isVerified: newStatus });
+      
+    } catch (error) {
+      alert('Erro ao atualizar verificação do usuário');
+    }
+  };
+
   const openUserDetails = async (user: any) => {
     setSelectedUser(user);
     setIsModalOpen(true);
@@ -209,6 +242,7 @@ export default function AdminUsers() {
                           className="w-12 h-12 rounded-2xl border-2 border-white shadow-sm object-cover"
                         />
                         {user.isAdmin && <div className="absolute -top-1 -right-1 p-1 bg-indigo-500 rounded-lg border-2 border-white shadow-sm"><ShieldCheck className="w-2.5 h-2.5 text-white" /></div>}
+                        {user.isVerified && <div className="absolute -bottom-1 -right-1 p-1 bg-amber-400 rounded-full border-2 border-white shadow-sm" title="Verificado"><CheckCircle2 className="w-3 h-3 text-white" /></div>}
                       </div>
                       <div>
                         <p className="text-sm font-black text-slate-900 leading-tight">{user.displayName}</p>
@@ -240,20 +274,37 @@ export default function AdminUsers() {
                     </div>
                   </td>
                   <td className="px-8 py-5">
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); toggleUserStatus(user); }}
-                      className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
-                        user.isBanned 
-                          ? 'bg-rose-50 text-rose-600 border-rose-100 hover:bg-rose-100' 
-                          : 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100'
-                      }`}
-                    >
-                      {user.isBanned ? (
-                        <><ShieldAlert className="w-3 h-3" /> Banido</>
-                      ) : (
-                        <><CheckCircle2 className="w-3 h-3" /> Ativo</>
-                      )}
-                    </button>
+                    <div className="flex flex-col gap-2">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); toggleUserStatus(user); }}
+                        className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
+                          user.isBanned 
+                            ? 'bg-rose-50 text-rose-600 border-rose-100 hover:bg-rose-100' 
+                            : 'bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-100'
+                        }`}
+                      >
+                        {user.isBanned ? (
+                          <><ShieldAlert className="w-3 h-3" /> Banido</>
+                        ) : (
+                          <><CheckCircle2 className="w-3 h-3" /> Ativo</>
+                        )}
+                      </button>
+                      
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); toggleUserVerification(user); }}
+                        className={`inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border ${
+                          user.isVerified 
+                            ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100 shadow-sm shadow-amber-500/10' 
+                            : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {user.isVerified ? (
+                          <><CheckCircle2 className="w-3 h-3" /> Verificado</>
+                        ) : (
+                          <><CheckCircle2 className="w-3 h-3 opacity-50" /> Verificar</>
+                        )}
+                      </button>
+                    </div>
                   </td>
                   <td className="px-8 py-5 text-right">
                     <div className="flex items-center justify-end gap-2">
@@ -347,6 +398,16 @@ export default function AdminUsers() {
                          }`}
                       >
                          {selectedUser.isBanned ? 'Reativar Membro' : 'Banir do Sistema'}
+                      </button>
+                      <button 
+                         onClick={() => toggleUserVerification(selectedUser)}
+                         className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-tighter transition-all shadow-lg ${
+                            selectedUser.isVerified 
+                            ? 'bg-amber-100 text-amber-700 shadow-amber-50 hover:bg-amber-200' 
+                            : 'bg-amber-500 text-white shadow-amber-200 hover:bg-amber-600'
+                         }`}
+                      >
+                         {selectedUser.isVerified ? 'Remover Selo' : 'Atribuir Selo de Verificado'}
                       </button>
                       <button 
                          onClick={() => window.open(`/profile/${selectedUser.id}`, '_blank')}

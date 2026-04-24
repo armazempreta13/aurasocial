@@ -16,7 +16,9 @@ interface LightboxProps {
   commentsCount?: number;
 }
 
-export function Lightbox({ isOpen, onClose, imageUrl, authorName, authorPhoto, content, likesCount = 0, commentsCount = 0 }: LightboxProps) {
+export function Lightbox({ isOpen, onClose, imageUrl, authorName, authorPhoto, content, likesCount: rawLikes = 0, commentsCount: rawComments = 0 }: LightboxProps) {
+  const likesCount = isNaN(Number(rawLikes)) ? 0 : Math.max(0, Number(rawLikes));
+  const commentsCount = isNaN(Number(rawComments)) ? 0 : Math.max(0, Number(rawComments));
   const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
@@ -112,9 +114,7 @@ export function Lightbox({ isOpen, onClose, imageUrl, authorName, authorPhoto, c
           {/* Footer/Actions */}
           <div className="p-4 border-t border-border/50 bg-gray-50">
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-1 text-primary font-bold text-sm">
                 👍 {likesCount}
-              </div>
               <div className="text-muted-foreground text-sm">
                 {commentsCount} Comments
               </div>

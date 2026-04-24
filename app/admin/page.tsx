@@ -326,9 +326,9 @@ export default function AdminDashboard() {
                     </div>
                  )}
               </div>
-              <button className="w-full py-4 mt-4 bg-slate-50 text-slate-400 text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-slate-100 hover:text-slate-600 transition-all">
-                 Ver Log Completo
-              </button>
+               <Link href="/admin/logs" className="block w-full py-4 mt-4 bg-slate-50 text-slate-400 text-center text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-slate-100 hover:text-slate-600 transition-all">
+                  Ver Log Completo
+               </Link>
            </div>
 
            <div className="bg-gradient-to-br from-indigo-600 to-violet-800 rounded-[40px] p-8 text-white relative overflow-hidden group">
@@ -339,14 +339,14 @@ export default function AdminDashboard() {
                  <p className="text-indigo-100/70 text-sm font-medium mb-8">Gerencie permissões globais e estado da plataforma.</p>
                  
                  <div className="grid grid-cols-2 gap-3">
-                    <button className="p-4 bg-white/10 hover:bg-white/20 rounded-2xl border border-white/10 text-center transition-all group/btn">
-                       <p className="text-[10px] font-black text-indigo-200 uppercase tracking-tighter opacity-70 mb-1">BROADCAST</p>
-                       <p className="text-xs font-bold whitespace-nowrap">Enviar Alerta</p>
-                    </button>
-                    <button className="p-4 bg-white/10 hover:bg-white/20 rounded-2xl border border-white/10 text-center transition-all">
-                       <p className="text-[10px] font-black text-indigo-200 uppercase tracking-tighter opacity-70 mb-1">SISTEMA</p>
-                       <p className="text-xs font-bold whitespace-nowrap">Manutenção</p>
-                    </button>
+                     <Link href="/admin/broadcast" className="p-4 bg-white/10 hover:bg-white/20 rounded-2xl border border-white/10 text-center transition-all group/btn block">
+                        <p className="text-[10px] font-black text-indigo-200 uppercase tracking-tighter opacity-70 mb-1">BROADCAST</p>
+                        <p className="text-xs font-bold whitespace-nowrap">Enviar Alerta</p>
+                     </Link>
+                     <Link href="/admin/system" className="p-4 bg-white/10 hover:bg-white/20 rounded-2xl border border-white/10 text-center transition-all block">
+                        <p className="text-[10px] font-black text-indigo-200 uppercase tracking-tighter opacity-70 mb-1">SISTEMA</p>
+                        <p className="text-xs font-bold whitespace-nowrap">Manutenção</p>
+                     </Link>
                  </div>
               </div>
            </div>

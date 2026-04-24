@@ -402,6 +402,7 @@ export function CreatePost({
       authorName: profile.displayName || 'Anonymous',
       authorPhoto: profile.photoURL || '',
       authorUsername: profile.username || '',
+      authorVerified: profile.isVerified || false,
       content: content.trim(),
       hashtags,
       imageUrl: imageUrl.trim() || null,

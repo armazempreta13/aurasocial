@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   Bell, Heart, MessageCircle, Share2, UserCheck, UserPlus,
-  AtSign, Users, Sparkles, Reply, Check, Trash2, CheckCheck, X, MoreHorizontal
+  AtSign, Users, Sparkles, Reply, Check, Trash2, CheckCheck, X, MoreHorizontal, BadgeCheck
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import {
@@ -12,12 +12,13 @@ import {
   deleteNotification, getNotificationLink, getNotificationColor,
 } from '@/lib/notifications';
 import { soundEffects } from '@/lib/sound-effects';
-import { respondToFriendRequest } from '@/lib/friendships';
+import { respondToFriendRequest, getRelationshipSnapshot, RelationshipStatus } from '@/lib/friendships';
 import Link from 'next/link';
 import { TimeAgo } from './TimeAgo';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'next/navigation';
 import { renderTextWithLinks } from '@/lib/mentions';
+import { motion, AnimatePresence } from 'motion/react';
 
 const DROPDOWN_EVENT = 'topnav:dropdown-open';
 
@@ -77,9 +78,27 @@ function NotifRow({
   const router = useRouter();
   const [friendActionDone, setFriendActionDone] = useState<'accepted' | 'declined' | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState<RelationshipStatus | null>(null);
   const color = getNotificationColor(n.type);
   const colorCls = COLOR_CLASSES[color];
   const isFriendRequest = n.type === 'friend_request';
+
+  useEffect(() => {
+    let isMounted = true;
+    if (isFriendRequest && !friendActionDone && profile?.uid) {
+      getRelationshipSnapshot(profile.uid, n.actorId).then(snap => {
+        if (isMounted && (snap.status === 'friends' || snap.status === 'muted')) {
+          setFriendActionDone('accepted');
+          // Auto-delete after 5 seconds if already accepted elsewhere
+          setTimeout(() => {
+            if (isMounted) deleteNotification(n.id).catch(() => {});
+          }, 5000);
+        }
+        if (isMounted) setCurrentStatus(snap.status);
+      });
+    }
+    return () => { isMounted = false; };
+  }, [isFriendRequest, friendActionDone, profile?.uid, n.actorId, n.id]);
 
   const getMessage = () => {
     switch (n.type) {
@@ -128,7 +147,11 @@ function NotifRow({
   };
 
   return (
-    <div
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
       className={`group relative flex gap-3 px-4 py-4 transition-all duration-300 hover:bg-slate-50/80 ${!n.read ? 'bg-primary/[0.02]' : ''}`}
     >
       {!n.read && (
@@ -153,8 +176,13 @@ function NotifRow({
       <div className="flex-1 min-w-0 flex flex-col justify-center">
         <div className="flex items-start justify-between gap-2">
           <button onClick={handleClick} className="min-w-0 text-left">
-            <p className={`text-[14px] leading-tight ${!n.read ? 'text-slate-900 font-medium' : 'text-slate-600'}`}>
-              <span className="font-bold text-slate-900">{n.actorName}</span>{' '}
+            <p className={`text-[14px] leading-tight ${!n.read ? 'text-slate-900 font-medium' : 'text-slate-600'} flex items-center gap-1 flex-wrap`}>
+              <span className="font-bold text-slate-900 flex items-center gap-1">
+                {n.actorName}
+                {(n.actorName?.toLowerCase().includes('philippe boechat') || n.actorId === 'gONefSw0DwPvTZBmFFIUn0sau4w2') && (
+                  <BadgeCheck className="w-3.5 h-3.5 text-indigo-600 fill-indigo-600 text-white shrink-0" strokeWidth={2.5} />
+                )}
+              </span>{' '}
               {getMessage()}
             </p>
             {n.extraText && (
@@ -210,7 +238,7 @@ function NotifRow({
               onClick={onClose}
               className="ml-auto text-[11px] font-bold text-slate-400 hover:text-primary transition-colors uppercase tracking-widest"
             >
-              {t('notifications.profile', 'Profile')}
+              {t('notifications.view_profile', 'Ver Perfil')}
             </Link>
           </div>
         )}
@@ -226,7 +254,7 @@ function NotifRow({
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -238,9 +266,17 @@ export function NotificationsDropdown() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isMarkingAll, setIsMarkingAll] = useState(false);
+  const [activeTab, setActiveTab] = useState<'all' | 'unread'>('all');
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
 
-  const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
+  const unreadNotifications = useMemo(() => notifications.filter((n) => !n.read), [notifications]);
+  const unreadCount = unreadNotifications.length;
+
+  const filteredNotifications = useMemo(() => {
+    return activeTab === 'unread' ? unreadNotifications : notifications;
+  }, [activeTab, notifications, unreadNotifications]);
 
   // Close when another TopNav dropdown opens (prevents overlap)
   useEffect(() => {
@@ -282,6 +318,9 @@ export function NotificationsDropdown() {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setIsOpen(false);
       }
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setIsMoreMenuOpen(false);
+      }
     };
     document.addEventListener('mousedown', onOutside);
     return () => document.removeEventListener('mousedown', onOutside);
@@ -289,6 +328,7 @@ export function NotificationsDropdown() {
 
   const handleRead = useCallback(async (id: string) => {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    soundEffects.play('success'); // Subtle feedback
     await markNotificationRead(id).catch(console.error);
   }, []);
 
@@ -313,14 +353,19 @@ export function NotificationsDropdown() {
       {/* Bell button */}
       <button
         onClick={handleOpen}
-        className="relative w-10 h-10 rounded-full bg-muted/50 hover:bg-muted flex items-center justify-center text-foreground transition-all duration-200 hover:scale-105 active:scale-95"
+        className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 group ${
+          isOpen ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-100/80 hover:bg-slate-200/80 text-slate-600'
+        }`}
         aria-label="Notifications"
       >
-        <Bell className="w-5 h-5" />
+        <Bell className={`w-5 h-5 transition-transform duration-300 ${isOpen ? 'scale-110' : 'group-hover:rotate-12'}`} />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 border-2 border-white shadow-sm animate-in zoom-in-50 duration-200">
-            {unreadCount > 99 ? '99+' : unreadCount}
-          </span>
+          <>
+            <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-gradient-to-br from-rose-500 to-red-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 border-2 border-white shadow-sm z-10">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+            <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 rounded-full animate-ping opacity-25" />
+          </>
         )}
       </button>
 
@@ -328,65 +373,136 @@ export function NotificationsDropdown() {
       {isOpen && (
         <div className="absolute top-full right-0 mt-3 w-[400px] bg-white/95 backdrop-blur-xl rounded-[28px] shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-white/50 overflow-hidden z-50 animate-in fade-in slide-in-from-top-3 duration-300">
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100/50 bg-white/50">
-            <div className="flex items-center gap-3">
-              <h3 className="font-black text-[17px] text-slate-900 tracking-tight">
+          <div className="px-6 pt-5 pb-3 bg-white/50">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-black text-[18px] text-slate-900 tracking-tight">
                 {t('notifications.title', 'Notificações')}
               </h3>
-              {unreadCount > 0 && (
-                <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 text-primary rounded-full animate-pulse">
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-                  <span className="text-[11px] font-black uppercase tracking-wider">
-                    {unreadCount} {t('notifications.new_count', 'novas')}
-                  </span>
+              <div className="flex items-center gap-1">
+                <div className="relative" ref={moreMenuRef}>
+                  <button
+                    onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
+                    className={`p-2 rounded-xl transition-all active:scale-90 ${
+                      isMoreMenuOpen ? 'bg-primary/10 text-primary' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <MoreHorizontal size={18} />
+                  </button>
+
+                  <AnimatePresence>
+                    {isMoreMenuOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                        className="absolute top-full right-0 mt-2 w-56 bg-white rounded-[20px] shadow-[0_10px_30px_rgba(0,0,0,0.1)] border border-slate-100 z-[60] py-2 overflow-hidden"
+                      >
+                        <button 
+                          onClick={() => { handleMarkAll(); setIsMoreMenuOpen(false); }}
+                          disabled={isMarkingAll || unreadCount === 0}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 text-left"
+                        >
+                          <CheckCheck size={16} className="text-primary" />
+                          {t('notifications.mark_all_read', 'Marcar todas como lidas')}
+                        </button>
+
+                        <div className="h-px bg-slate-50 mx-2 my-1" />
+
+                        <Link
+                          href="/notifications"
+                          onClick={() => { setIsMoreMenuOpen(false); handleClose(); }}
+                          className="flex items-center gap-3 px-4 py-3 text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                          <Bell size={16} className="text-slate-400" />
+                          {t('notifications.see_all_full', 'Ver todas as notificações')}
+                        </Link>
+                        
+                        <Link
+                          href="/settings/notifications"
+                          onClick={() => { setIsMoreMenuOpen(false); handleClose(); }}
+                          className="flex items-center gap-3 px-4 py-3 text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                          <Sparkles size={16} className="text-amber-500" />
+                          {t('notifications.settings', 'Configurações')}
+                        </Link>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
-              )}
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              {unreadCount > 0 && (
-                <button
-                  onClick={handleMarkAll}
-                  disabled={isMarkingAll}
-                  title={t('notifications.mark_all', 'Marcar todas como lidas')}
-                  className="p-2 text-primary hover:bg-primary/5 rounded-full transition-all active:scale-90 disabled:opacity-50"
-                >
-                  <CheckCheck size={18} />
-                </button>
-              )}
-              <Link
-                href="/notifications"
-                onClick={handleClose}
-                title={t('notifications.see_all', 'Ver tudo')}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all active:scale-90"
+
+            {/* Tabs */}
+            <div className="flex items-center gap-1 bg-slate-100/50 p-1 rounded-[14px]">
+              <button
+                onClick={() => setActiveTab('all')}
+                className={`flex-1 py-1.5 text-[12px] font-bold rounded-[10px] transition-all ${
+                  activeTab === 'all' 
+                    ? 'bg-white text-primary shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
               >
-                <MoreHorizontal size={18} />
-              </Link>
+                Todas
+              </button>
+              <button
+                onClick={() => setActiveTab('unread')}
+                className={`flex-1 py-1.5 text-[12px] font-bold rounded-[10px] transition-all flex items-center justify-center gap-1.5 ${
+                  activeTab === 'unread' 
+                    ? 'bg-white text-primary shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                Não lidas
+                {unreadCount > 0 && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                )}
+              </button>
             </div>
           </div>
 
-          {/* List */}
-          <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-50">
-            {notifications.length === 0 ? (
-              <div className="py-12 flex flex-col items-center gap-3">
-                <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center">
-                  <Bell className="w-6 h-6 text-slate-300" />
-                </div>
-                <p className="text-[13px] text-slate-400 font-medium">
-                  {t('notifications.empty', 'No notifications yet.')}
-                </p>
-              </div>
-            ) : (
-              notifications.map((n) => (
-                <NotifRow
-                  key={n.id}
-                  n={n}
-                  compact
-                  onRead={handleRead}
-                  onDelete={handleDelete}
-                  onClose={handleClose}
-                />
-              ))
-            )}
+          <div className="max-h-[400px] overflow-y-auto divide-y divide-slate-100/50 scrollbar-none">
+            <AnimatePresence initial={false} mode="popLayout">
+              {filteredNotifications.length === 0 ? (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="py-16 px-8 flex flex-col items-center text-center gap-4"
+                >
+                  <div className="w-16 h-16 rounded-3xl bg-slate-50 flex items-center justify-center text-slate-200 border border-slate-100/50 transform rotate-12">
+                    <Bell className="w-8 h-8" />
+                  </div>
+                  <div>
+                    <p className="text-[15px] text-slate-900 font-bold mb-1">
+                      {activeTab === 'unread' ? 'Nenhuma notificação não lida' : 'Nada por aqui ainda'}
+                    </p>
+                    <p className="text-[13px] text-slate-500 leading-relaxed">
+                      {activeTab === 'unread' 
+                        ? 'Você está em dia com todas as suas interações!' 
+                        : 'Suas notificações aparecerão aqui quando alguém interagir com você.'}
+                    </p>
+                  </div>
+                  {activeTab === 'unread' && notifications.length > 0 && (
+                    <button 
+                      onClick={() => setActiveTab('all')}
+                      className="text-[12px] font-bold text-primary hover:underline"
+                    >
+                      Ver todas as notificações
+                    </button>
+                  )}
+                </motion.div>
+              ) : (
+                filteredNotifications.map((n) => (
+                  <NotifRow
+                    key={n.id}
+                    n={n}
+                    compact
+                    onRead={handleRead}
+                    onDelete={handleDelete}
+                    onClose={handleClose}
+                  />
+                ))
+              )}
+            </AnimatePresence>
           </div>
 
           {notifications.length > 0 && (

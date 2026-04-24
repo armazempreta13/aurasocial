@@ -33,19 +33,55 @@ export function RightPanel() {
   useEffect(() => {
     let unsubscribeFriends: (() => void) | undefined;
 
-    const postsQuery = query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(120));
+    const postsQuery = query(
+      collection(db, 'posts'), 
+      where('visibility', '==', 'public'),
+      orderBy('createdAt', 'desc'), 
+      limit(120)
+    );
+    
+    let unsubscribeFallback: (() => void) | undefined;
+
     const unsubscribePosts = onSnapshot(postsQuery, (snapshot) => {
       const posts = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
       setTrendingTags(rankTrendingHashtags(posts));
-    }, (err) => console.error('Error syncing trending posts:', err));
+    }, (err) => {
+      // 🕵️ SILENT FALLBACK: Don't flood console if it's just a missing index (we have a fallback for that)
+      const isIndexError = err.code === 'failed-precondition' || err.message.toLowerCase().includes('index');
+      if (!isIndexError) console.warn('RightPanel: Error syncing trending posts:', err);
+      
+      // Fallback: try without ordering if it causes index issues
+      if (err.code === 'failed-precondition' || err.message.toLowerCase().includes('index')) {
+        console.info('RightPanel: Retrying posts query with fallback (no ordering)...');
+        const fallbackQuery = query(
+          collection(db, 'posts'),
+          where('visibility', '==', 'public'),
+          limit(100)
+        );
+        unsubscribeFallback = onSnapshot(fallbackQuery, (snapshot) => {
+          const posts = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+          setTrendingTags(rankTrendingHashtags(posts));
+        }, (fErr) => console.error('RightPanel: Fallback posts query failed:', fErr));
+      }
+    });
 
     const communitiesQuery = query(collection(db, 'communities'), orderBy('memberCount', 'desc'), limit(3));
     const unsubscribeCommunities = onSnapshot(communitiesQuery, (snapshot) => {
-      setTrendingCommunities(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (err) => console.error('Error syncing trending communities:', err));
+      setTrendingCommunities(snapshot.docs.map(doc => {
+        const data = doc.data();
+        return { 
+          id: doc.id, 
+          ...data,
+          memberCount: typeof data.memberCount === 'number' ? data.memberCount : 0
+        };
+      }));
+    }, (err) => console.warn('RightPanel: Error syncing trending communities:', err));
 
     const loadSuggestions = async () => {
       if (!currentUser) return;
@@ -99,7 +135,7 @@ export function RightPanel() {
           setActiveUsers([]);
         }
       }, (error) => {
-        console.error('Error loading friends for active panel:', error);
+        console.warn('RightPanel: Error loading friends for active panel:', error);
       });
     } catch (error) {
       console.error('Error setting up friends listener:', error);
@@ -108,6 +144,7 @@ export function RightPanel() {
     return () => {
       if (unsubscribeFriends) unsubscribeFriends();
       unsubscribePosts();
+      if (unsubscribeFallback) unsubscribeFallback();
       unsubscribeCommunities();
     };
   }, [currentUser]);

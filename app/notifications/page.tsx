@@ -5,7 +5,7 @@ import { AppLayout } from '@/components/AppLayout';
 import { useAppStore } from '@/lib/store';
 import {
   Bell, Heart, MessageCircle, Share2, UserCheck, UserPlus,
-  AtSign, Users, Sparkles, Reply, CheckCheck, Trash2, Check, X, Filter
+  AtSign, Users, Sparkles, Reply, CheckCheck, Trash2, Check, X, Filter, BadgeCheck
 } from 'lucide-react';
 import Link from 'next/link';
 import { TimeAgo } from '@/components/TimeAgo';
@@ -17,7 +17,7 @@ import {
   subscribeToNotifications, markNotificationRead, markAllNotificationsRead,
   deleteNotification, deleteAllNotifications, getNotificationLink, getNotificationColor,
 } from '@/lib/notifications';
-import { respondToFriendRequest } from '@/lib/friendships';
+import { respondToFriendRequest, getRelationshipSnapshot, RelationshipStatus } from '@/lib/friendships';
 
 // ─── Colour map ───────────────────────────────────────────────────────────────
 
@@ -90,9 +90,27 @@ function NotifCard({ n, onRead, onDelete }: {
   const router = useRouter();
   const [friendDone, setFriendDone] = useState<'accepted' | 'declined' | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const [currentStatus, setCurrentStatus] = useState<RelationshipStatus | null>(null);
   const color = getNotificationColor(n.type);
   const cls = COLOR_CLASSES[color];
   const isFriendRequest = n.type === 'friend_request';
+
+  useEffect(() => {
+    let isMounted = true;
+    if (isFriendRequest && !friendDone && profile?.uid) {
+      getRelationshipSnapshot(profile.uid, n.actorId).then(snap => {
+        if (isMounted && (snap.status === 'friends' || snap.status === 'muted')) {
+          setFriendDone('accepted');
+          // Auto-delete after 5 seconds if already accepted elsewhere
+          setTimeout(() => {
+            if (isMounted) onDelete(n.id);
+          }, 5000);
+        }
+        if (isMounted) setCurrentStatus(snap.status);
+      });
+    }
+    return () => { isMounted = false; };
+  }, [isFriendRequest, friendDone, profile?.uid, n.actorId, n.id, onDelete]);
 
   const getMessage = () => {
     switch (n.type) {
@@ -158,10 +176,13 @@ function NotifCard({ n, onRead, onDelete }: {
                 <p className="text-[14px] leading-snug text-slate-900 font-medium">
                   <Link
                     href={`/profile/${n.actorId}`}
-                    className="font-bold text-slate-900 hover:text-primary transition-colors"
+                    className="font-bold text-slate-900 hover:text-primary transition-colors flex items-center gap-1"
                     onClick={(e) => e.stopPropagation()}
                   >
                     {n.actorName}
+                    {(n.actorName?.toLowerCase().includes('philippe boechat') || n.actorId === 'gONefSw0DwPvTZBmFFIUn0sau4w2') && (
+                      <BadgeCheck className="w-3.5 h-3.5 text-indigo-600 fill-indigo-600 text-white shrink-0" strokeWidth={2.5} />
+                    )}
                   </Link>{' '}
                   {getMessage()}
                 </p>
@@ -176,7 +197,7 @@ function NotifCard({ n, onRead, onDelete }: {
                 href={`/profile/${n.actorId}`}
                 className="shrink-0 text-[12px] font-semibold text-slate-500 hover:text-primary transition-colors"
               >
-                {t('notifications.view_profile', 'View profile')}
+                {t('notifications.view_profile', 'Ver Perfil')}
               </Link>
             </div>
 
@@ -211,10 +232,13 @@ function NotifCard({ n, onRead, onDelete }: {
               <p className={`text-[14px] leading-snug ${!n.read ? 'text-slate-900 font-medium' : 'text-slate-600'}`}>
                 <Link
                   href={`/profile/${n.actorId}`}
-                  className="font-bold text-slate-900 hover:text-primary transition-colors"
+                  className="font-bold text-slate-900 hover:text-primary transition-colors flex items-center gap-1"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {n.actorName}
+                  {(n.actorName?.toLowerCase().includes('philippe boechat') || n.actorId === 'gONefSw0DwPvTZBmFFIUn0sau4w2') && (
+                    <BadgeCheck className="w-3.5 h-3.5 text-indigo-600 fill-indigo-600 text-white shrink-0" strokeWidth={2.5} />
+                  )}
                 </Link>{' '}
                 {getMessage()}
                 {n.communityName && (n.type === 'community_invite' || n.type === 'community_post') && n.communityId && (
@@ -278,14 +302,6 @@ export default function NotificationsPage() {
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   const [showActions, setShowActions] = useState(false);
 
-  if (!gateReady || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
-      </div>
-    );
-  }
-
   useEffect(() => {
     if (!isAuthReady || !profile) return;
     const unsub = subscribeToNotifications(profile.uid, (items) => {
@@ -304,6 +320,14 @@ export default function NotificationsPage() {
     setNotifications((prev) => prev.filter((n) => n.id !== id));
     await deleteNotification(id).catch(console.error);
   }, []);
+
+  if (!gateReady || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
+      </div>
+    );
+  }
 
   const handleMarkAll = async () => {
     if (!profile?.uid || isMarkingAll) return;

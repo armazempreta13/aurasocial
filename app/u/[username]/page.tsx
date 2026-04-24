@@ -17,14 +17,6 @@ export default function UsernameRedirectPage() {
   const [error, setError] = useState(false);
   const { user, isAuthReady } = useRequireAuth();
 
-  if (!isAuthReady || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
-      </div>
-    );
-  }
-
   useEffect(() => {
     if (!username) return;
 
@@ -51,6 +43,14 @@ export default function UsernameRedirectPage() {
 
     findUser();
   }, [username, router]);
+
+  if (!isAuthReady || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
+      </div>
+    );
+  }
 
   if (error) {
     return (

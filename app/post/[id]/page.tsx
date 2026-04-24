@@ -15,14 +15,6 @@ export default function PostPage() {
   const [loading, setLoading] = useState(true);
   const { user, isAuthReady } = useRequireAuth();
 
-  if (!isAuthReady || !user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
-      </div>
-    );
-  }
-
   useEffect(() => {
     if (!postId) return;
 
@@ -44,6 +36,14 @@ export default function PostPage() {
 
     void loadPost();
   }, [postId]);
+
+  if (!isAuthReady || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="h-10 w-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background pb-12">

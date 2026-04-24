@@ -174,7 +174,8 @@ export function subscribeToNotifications(
   
   const qOrdered = query(qBase, orderBy('createdAt', 'desc'), limit(maxItems));
 
-  return onSnapshot(qOrdered, (snap) => {
+  let fallbackUnsub: Unsubscribe | null = null;
+  const mainUnsub = onSnapshot(qOrdered, (snap) => {
     const items: Notification[] = snap.docs.map((d) => ({
       id: d.id,
       ...(d.data() as Omit<Notification, 'id'>),
@@ -184,24 +185,31 @@ export function subscribeToNotifications(
     if (err.code === 'failed-precondition' || err.message.includes('index')) {
       console.warn('Notifications ordered index missing, falling back to unordered client-side sort');
       // FALLBACK: Query without orderBy and sort on client
-      onSnapshot(query(qBase, limit(maxItems * 2)), (snap) => {
+      fallbackUnsub = onSnapshot(query(qBase, limit(maxItems * 2)), (snap) => {
         const items: Notification[] = snap.docs
           .map((d) => ({
             id: d.id,
             ...(d.data() as Omit<Notification, 'id'>),
           }))
           .sort((a, b) => {
-            const tA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
-            const tB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+            const tA = (a.createdAt as any)?.toMillis ? (a.createdAt as any).toMillis() : 0;
+            const tB = (b.createdAt as any)?.toMillis ? (b.createdAt as any).toMillis() : 0;
             return tB - tA;
           })
           .slice(0, maxItems);
         callback(items);
+      }, (err2) => {
+        console.error('Notifications fallback listener error:', err2);
       });
     } else {
-      console.error('Notification subscription error:', err);
+      console.error('Notifications main listener error:', err);
     }
   });
+
+  return () => {
+    mainUnsub();
+    if (fallbackUnsub) fallbackUnsub();
+  };
 }
 
 // ─── Helper: notification link resolution ─────────────────────────────────────

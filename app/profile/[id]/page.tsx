@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAppStore } from '@/lib/store';
 import { TopNav } from '@/components/TopNav';
-import { Settings, MapPin, Calendar, Image as ImageIcon, Heart, MessageSquare, CheckCircle, Briefcase, GraduationCap, Heart as HeartIcon, ShieldBan, UserMinus, UserPlus, UserRoundCheck, UserRoundX } from 'lucide-react';
+import { Settings, MapPin, Calendar, Image as ImageIcon, Heart, MessageSquare, CheckCircle, Briefcase, GraduationCap, Heart as HeartIcon, ShieldBan, UserMinus, UserPlus, UserRoundCheck, UserRoundX, BadgeCheck } from 'lucide-react';
 import { Feed } from '@/components/Feed';
 import { CreatePost } from '@/components/CreatePost';
 import { EditProfileModal } from '@/components/EditProfileModal';
@@ -43,7 +43,7 @@ export default function ProfilePage() {
   const [showRelationshipMenu, setShowRelationshipMenu] = useState(false);
 
   const isOwner = currentUser?.uid === userId;
-  const isVIP = viewedUser?.displayName === 'Philippe Boechat';
+  const isVIP = viewedUser?.isVerified || viewedUser?.displayName === 'Philippe Boechat';
 
   // State for conditional rendering instead of early return
   const showLoading = !isAuthReady || !user;
@@ -349,9 +349,9 @@ export default function ProfilePage() {
                 <h1 className="text-[40px] font-black text-foreground tracking-tight mb-2 flex items-center justify-center gap-3">
                   {viewedUser.displayName}
                   {isVIP && (
-                    <div className="relative">
-                      <div className="absolute inset-0 bg-blue-400 blur-md opacity-20 scale-150 animate-pulse" />
-                      <CheckCircle className="w-7 h-7 text-blue-500 fill-blue-500/10 relative" />
+                    <div className="relative" title="Conta Verificada">
+                      <div className="absolute inset-0 bg-indigo-500 blur-md opacity-20 scale-150 animate-pulse" />
+                      <BadgeCheck className="w-7 h-7 text-indigo-600 fill-indigo-600 text-white relative" strokeWidth={2.5} />
                     </div>
                   )}
                 </h1>

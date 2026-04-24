@@ -43,7 +43,13 @@ const newEnKeys = {
     "accepted_request": "accepted your friend request",
     "shared": "shared your post",
     "default_msg": "sent you a notification",
-    "your_post": "your post"
+    "your_post": "your post",
+    "view_profile": "View profile",
+    "accepted": "Request accepted",
+    "declined": "Request declined",
+    "processing": "Processing...",
+    "mark_all_read": "Mark all as read",
+    "settings": "Settings"
   },
   "settings_page": {
     "title": "Settings",
@@ -138,7 +144,13 @@ const newPtKeys = {
     "accepted_request": "aceitou sua solicitação de amizade",
     "shared": "compartilhou o seu post",
     "default_msg": "enviou uma notificação",
-    "your_post": "seu post"
+    "your_post": "seu post",
+    "view_profile": "Ver Perfil",
+    "accepted": "Solicitação aceita",
+    "declined": "Solicitação recusada",
+    "processing": "Processando...",
+    "mark_all_read": "Marcar todas como lidas",
+    "settings": "Configurações"
   },
   "settings_page": {
     "title": "Configurações",
