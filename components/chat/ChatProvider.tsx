@@ -475,8 +475,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   // ── Send message ───────────────────────────────────────────────────────────
   const sendMessage = useCallback(
     async (chatId: string, text: string, type: 'text' | 'image' = 'text', attachmentUrl?: string) => {
-      const uid = profileUidRef.current;
-      if (!uid) return;
+      if (!profile) return;
+      const uid = profile.uid;
       const chat = chats.find((c) => c.id === chatId);
       if (!chat) return;
 
