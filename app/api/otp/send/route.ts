@@ -67,7 +67,7 @@ export async function POST(request: Request) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: process.env.RESEND_FROM || 'Aura Social <onboarding@resend.dev>',
+          from: process.env.RESEND_FROM || 'Aura Social <noreply@aurasocial.top>',
 
           to: email,
           subject: `${code} é o seu código de verificação Aura`,
