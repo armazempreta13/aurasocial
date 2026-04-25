@@ -72,12 +72,12 @@ export async function POST(request: Request) {
           to: email,
           subject: `${code} é o seu código de verificação Aura`,
           html: `
-            <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0d0e15; padding: 40px 20px; text-align: center;">
-              <div style="max-width: 500px; margin: 0 auto; background: linear-gradient(145deg, #1a1c29, #131520); border: 1px solid #2c2f48; border-radius: 24px; padding: 40px; box-shadow: 0 20px 40px rgba(0,0,0,0.4);">
+            <div style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f4f7ff; padding: 50px 20px; text-align: center;">
+              <div style="max-width: 550px; margin: 0 auto; background-color: #ffffff; border-radius: 32px; padding: 48px; box-shadow: 0 20px 60px rgba(111, 99, 221, 0.08); border: 1px solid #eef2ff;">
                 
-                <div style="margin-bottom: 30px;">
-                  <div style="display: inline-block; padding: 12px; background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%); border-radius: 16px; box-shadow: 0 8px 16px rgba(99, 102, 241, 0.3);">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <div style="margin-bottom: 32px;">
+                  <div style="display: inline-block; padding: 16px; background: linear-gradient(135deg, #6f63dd 0%, #8e84e9 100%); border-radius: 22px; box-shadow: 0 10px 20px rgba(111, 99, 221, 0.25);">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                       <path d="M2 17L12 22L22 17" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                       <path d="M2 12L12 17L22 12" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -85,23 +85,30 @@ export async function POST(request: Request) {
                   </div>
                 </div>
 
-                <h1 style="color: #ffffff; font-size: 24px; font-weight: 700; margin: 0 0 10px 0; letter-spacing: -0.5px;">Verifique seu E-mail</h1>
-                <p style="color: #94a3b8; font-size: 16px; line-height: 24px; margin: 0 0 30px 0;">Seja bem-vindo à Aura Social. Use o código de segurança de 6 dígitos abaixo para validar seu cadastro.</p>
+                <h1 style="color: #2e3277; font-size: 28px; font-weight: 800; margin: 0 0 12px 0; letter-spacing: -0.8px;">Verifique sua conta</h1>
+                <p style="color: #64748b; font-size: 16px; line-height: 24px; margin: 0 0 32px 0; font-medium">Falta pouco para você entrar na <b>Aura Social</b>. Use o código de segurança abaixo para validar seu acesso.</p>
                 
-                <div style="background: rgba(30, 41, 59, 0.5); border: 1px solid #334155; border-radius: 16px; padding: 20px; margin-bottom: 30px;">
-                  <span style="font-size: 42px; font-weight: 800; color: #818cf8; letter-spacing: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;">${code}</span>
+                <div style="background: #f8fbff; border: 2px dashed #eaeffa; border-radius: 24px; padding: 32px; margin-bottom: 32px;">
+                  <span style="font-size: 48px; font-weight: 900; color: #6f63dd; letter-spacing: 8px; font-family: 'Courier New', Courier, monospace;">${code}</span>
                 </div>
 
-                <div style="border-top: 1px solid #2c2f48; padding-top: 20px;">
-                  <p style="color: #64748b; font-size: 13px; line-height: 20px; margin: 0;">Este código expira em <strong>5 minutos</strong>.<br>Se você não solicitou este acesso, ignore este e-mail.</p>
+                <div style="border-top: 1px solid #f1f5f9; padding-top: 24px;">
+                  <p style="color: #94a3b8; font-size: 14px; line-height: 22px; margin: 0;">Este código é válido por <b>5 minutos</b>.<br>Se você não solicitou este e-mail, pode ignorá-lo com segurança.</p>
                 </div>
 
               </div>
-              <div style="margin-top: 20px; color: #475569; font-size: 12px;">
-                &copy; ${new Date().getFullYear()} Aura Social Inc. Todos os direitos reservados.
+              
+              <div style="margin-top: 32px; text-align: center;">
+                <p style="color: #94a3b8; font-size: 12px; margin: 0;">&copy; ${new Date().getFullYear()} Aura Social. Elevando conexões humanas.</p>
+                <div style="margin-top: 8px;">
+                  <a href="#" style="color: #6f63dd; text-decoration: none; font-size: 12px; font-weight: 600;">Termos de Uso</a>
+                  <span style="color: #cbd5e1; margin: 0 8px;">&bull;</span>
+                  <a href="#" style="color: #6f63dd; text-decoration: none; font-size: 12px; font-weight: 600;">Privacidade</a>
+                </div>
               </div>
             </div>
           `,
+
 
         }),
       });

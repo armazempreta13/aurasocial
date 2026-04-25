@@ -161,6 +161,9 @@ export function OnboardingFlow() {
   const handleOtpChange = (index: number, value: string) => {
     if (!/^\d*$/.test(value)) return;
     const newOtp = [...otpValues];
+    
+    // Se o valor tiver mais de um dígito (pode acontecer em alguns browsers/teclados móveis),
+    // pegamos apenas o último. O colar é tratado separadamente no handlePaste.
     newOtp[index] = value.slice(-1);
     setOtpValues(newOtp);
 
@@ -169,7 +172,24 @@ export function OnboardingFlow() {
     }
   };
 
+  const handlePaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (!pastedData) return;
+
+    const newOtp = [...otpValues];
+    pastedData.split('').forEach((char, i) => {
+      if (i < 6) newOtp[i] = char;
+    });
+    setOtpValues(newOtp);
+
+    // Focar no último campo preenchido ou no próximo vazio
+    const nextIndex = Math.min(pastedData.length, 5);
+    otpRefs.current[nextIndex]?.focus();
+  };
+
   const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+
     if (e.key === 'Backspace' && !otpValues[index] && index > 0) {
       otpRefs.current[index - 1]?.focus();
     }
@@ -548,12 +568,16 @@ export function OnboardingFlow() {
                       key={index}
                       ref={(el) => { otpRefs.current[index] = el; }}
                       type="text"
+                      inputMode="numeric"
+                      pattern="\d*"
                       value={val}
                       maxLength={1}
                       onChange={(e) => handleOtpChange(index, e.target.value)}
                       onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                      onPaste={handlePaste}
                       className="h-12 w-10 text-center text-xl font-bold rounded-[12px] border border-[#eaeffa] bg-[#f8fbff] outline-none transition-all focus:border-[#6f63dd] focus:bg-white focus:ring-4 focus:ring-[#6f63dd]/10 text-[#2e3277]"
                     />
+
                   ))}
                 </div>
 
