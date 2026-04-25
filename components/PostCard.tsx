@@ -971,7 +971,12 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
   };
 
   const activePostReaction = useMemo(() => REACTIONS.find((r) => r.id === userReaction), [userReaction]);
-  const displayContent = post.content || '';
+  // Strip hashtags from display content to avoid rendering them twice
+  // (they appear again below as clickable tag chips)
+  const displayContent = useMemo(
+    () => stripRenderedHashtags(post.content || '', normalizedHashtags),
+    [post.content, normalizedHashtags]
+  );
 
   const sharedPost = post.sharedPostData || null;
   const sharedPostDisplayContent = sharedPost?.content || '';
@@ -1291,64 +1296,70 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
         )}
 
         {post.poll && (
-          <div className="mb-6 pl-0.5">
-            <div className="bg-slate-50/50 border border-slate-100/50 rounded-3xl p-5 shadow-sm">
+          <div className="mb-5 mt-2">
+            <div className="border border-border/60 bg-slate-50/30 rounded-3xl p-5 shadow-sm">
               <div className="flex items-center justify-between mb-4">
-                <span className="text-[11px] font-black text-primary/60 uppercase tracking-widest flex items-center gap-2">
-                  <BarChart2 className="w-3 h-3" />
-                  Enquete em tempo real
+                <span className="text-[11px] font-black text-primary/70 uppercase tracking-widest flex items-center gap-1.5">
+                  <BarChart2 className="w-3.5 h-3.5" /> Enquete em tempo real
                 </span>
-                <span className="text-[10px] font-bold text-slate-400 capitalize">
+                <span className="text-[11px] font-bold text-slate-400 capitalize">
                   {post.poll.expiresAt < Date.now() ? 'Encerrada' : <TimeAgo date={new Date(post.poll.expiresAt)} />}
                 </span>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 {post.poll.options.map((option: any) => {
                   const hasVoted = post.poll.voters?.includes(authUid);
                   const isExpired = post.poll.expiresAt < Date.now();
                   const showResults = hasVoted || isExpired;
                   const percentage = post.poll.totalVotes > 0 ? Math.round(((option.votes || 0) / post.poll.totalVotes) * 100) : 0;
+                  const maxVotes = Math.max(...post.poll.options.map((o: any) => o.votes || 0));
+                  const isTop = post.poll.totalVotes > 0 && (option.votes || 0) === maxVotes;
                   
                   return (
                     <button
                       key={option.id}
                       onClick={() => !showResults && handleVote(option.id)}
                       disabled={showResults}
-                      className={`relative w-full text-left overflow-hidden rounded-2xl transition-all duration-500 group/option ${
-                        showResults ? 'cursor-default' : 'hover:scale-[1.02] active:scale-95 border border-slate-200'
+                      className={`relative w-full text-left overflow-hidden rounded-2xl transition-all duration-300 group/option ${
+                        showResults ? 'cursor-default' : 'hover:scale-[1.01] active:scale-[0.98] border border-slate-200/80 bg-white shadow-sm hover:border-primary/30 hover:shadow-md'
                       }`}
                     >
-                      {/* Progress background */}
+                      {/* Full background base when results are shown */}
+                      {showResults && (
+                        <div className={`absolute inset-0 z-0 bg-slate-100/60 ${isTop ? 'bg-primary/[0.04]' : ''}`} />
+                      )}
+                      
+                      {/* Progress background bar */}
                       {showResults && (
                         <motion.div 
                           initial={{ width: 0 }}
                           animate={{ width: `${percentage}%` }}
                           transition={{ duration: 1, ease: 'circOut' }}
-                          className={`absolute inset-0 z-0 opacity-15 ${
-                            percentage === Math.max(...post.poll.options.map((o: any) => o.votes || 0)) ? 'bg-primary' : 'bg-slate-400'
+                          className={`absolute inset-y-0 left-0 z-0 rounded-r-xl opacity-20 ${
+                            isTop ? 'bg-primary' : 'bg-slate-400'
                           }`}
                         />
                       )}
                       
-                      <div className={`relative z-10 px-4 py-3.5 flex items-center justify-between ${showResults ? '' : 'bg-white'}`}>
-                        <div className="flex items-center gap-3">
+                      <div className={`relative z-10 px-4 py-3 flex items-center justify-between min-h-[44px] ${showResults ? '' : 'bg-white'}`}>
+                        <div className="flex items-center gap-3 pr-4">
                           {showResults && (
-                             <div className={`w-1.5 h-1.5 rounded-full ${
-                               percentage === Math.max(...post.poll.options.map((o: any) => o.votes || 0)) ? 'bg-primary shadow-[0_0_8px_rgba(122,99,241,0.5)]' : 'bg-slate-300'
-                             }`} />
+                            <div className={`shrink-0 w-1.5 h-1.5 rounded-full ${
+                              isTop ? 'bg-primary shadow-[0_0_8px_rgba(122,99,241,0.6)]' : 'bg-slate-300'
+                            }`} />
                           )}
-                          <span className={`text-[15px] font-bold transition-colors ${
+                          <span className={`text-[14px] font-semibold leading-snug transition-colors ${
                             showResults 
-                              ? (percentage === Math.max(...post.poll.options.map((o: any) => o.votes || 0)) ? 'text-slate-900' : 'text-slate-500') 
+                              ? (isTop ? 'text-slate-900' : 'text-slate-500') 
                               : 'text-slate-700 group-hover/option:text-primary'
                           }`}>
                             {option.text}
                           </span>
                         </div>
                         {showResults && (
-                          <div className="flex flex-col items-end leading-none">
+                          <div className="flex flex-col items-end leading-none shrink-0">
                             <span className={`text-[14px] font-black ${
-                              percentage === Math.max(...post.poll.options.map((o: any) => o.votes || 0)) ? 'text-primary' : 'text-slate-400'
+                              isTop ? 'text-primary' : 'text-slate-400'
                             }`}>
                               {percentage}%
                             </span>
@@ -1359,11 +1370,11 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
                   );
                 })}
               </div>
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] font-bold text-slate-400">
+              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[12px] font-bold text-slate-400">
                 <span>{post.poll.totalVotes || 0} votos totais</span>
                 {post.poll.voters?.includes(authUid) && (
-                   <span className="text-primary flex items-center gap-1">
-                     <CheckCircle className="w-3 h-3" />
+                   <span className="text-primary flex items-center gap-1.5">
+                     <CheckCircle className="w-3.5 h-3.5" />
                      Voto computado
                    </span>
                 )}

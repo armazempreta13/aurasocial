@@ -65,13 +65,15 @@ export function Feed({
   communityId, 
   type = 'posts', 
   searchQuery,
-  pinnedPostIds
+  pinnedPostIds,
+  containerClassName
 }: { 
   userId?: string, 
   communityId?: string, 
   type?: 'posts' | 'media' | 'likes', 
   searchQuery?: string,
-  pinnedPostIds?: string[]
+  pinnedPostIds?: string[],
+  containerClassName?: string
 }) {
   const { t } = useTranslation('common');
   const focusMode = useAppStore((state) => state.focusMode);
@@ -304,52 +306,63 @@ export function Feed({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const [showFeedDropdown, setShowFeedDropdown] = useState(false);
+
   if (status === 'pending') {
     return <div className="flex flex-col gap-6"><PostSkeleton /><PostSkeleton /></div>;
   }
 
   const TABS = [
-    { id: 'for_you', label: 'Descobertas', icon: Sparkles },
+    { id: 'for_you', label: 'Para você', icon: Sparkles },
     { id: 'trending', label: 'Bombando', icon: Zap },
     { id: 'recent', label: 'Recentes', icon: Clock },
     { id: 'social', label: 'Círculo', icon: Users },
-    { id: 'deep', label: 'Foco Total', icon: BookOpen },
+    { id: 'deep', label: 'Foco total', icon: BookOpen },
   ];
+  const activeTab = TABS.find((t) => t.id === feedMode) || TABS[0];
 
   return (
-    <div className="w-full max-w-2xl mx-auto px-1 sm:px-0">
-      {/* Navigation Layer */}
-      <div className="sticky top-0 z-40 bg-white/70 backdrop-blur-2xl border-b border-slate-100/50 flex items-center justify-between px-6 py-4 overflow-hidden mb-6 rounded-b-[2rem] shadow-sm shadow-slate-200/20">
-        <div className="flex gap-1 overflow-x-auto no-scrollbar scroll-smooth flex-1 items-center">
-          <style jsx>{`
-            .no-scrollbar::-webkit-scrollbar { display: none; }
-            .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-          `}</style>
-            {TABS.map((tab) => {
-              const Icon = tab.icon;
-              const active = feedMode === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setFeedMode(tab.id as any)}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-[11px] font-ex-bold transition-all duration-300 relative whitespace-nowrap ${
-                    active 
-                      ? 'bg-primary/10 text-primary scale-105' 
-                      : 'text-slate-400 hover:bg-slate-50'
-                  }`}
-                >
-                  <Icon className={`w-3.5 h-3.5 ${active ? 'fill-primary/20' : ''}`} />
-                  <span className="tracking-widest uppercase">{tab.label}</span>
-                  {active && (
-                    <motion.div 
-                      layoutId="activeTab" 
-                      className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_10px_rgba(122,99,241,0.5)]" 
-                    />
-                  )}
-                </button>
-              );
-            })}
-        </div>
+    <div className={containerClassName || "w-full max-w-3xl mx-auto px-1 sm:px-0"}>
+      {/* Compact Feed Mode Selector */}
+      <div className="flex justify-end mb-3 relative">
+        <button
+          onClick={() => setShowFeedDropdown((v) => !v)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-slate-100 shadow-sm text-[11px] font-bold text-slate-500 hover:text-primary hover:border-primary/20 transition-all duration-200"
+        >
+          <activeTab.icon className="w-3 h-3 text-primary" />
+          <span>{activeTab.label}</span>
+          <ChevronUp className={`w-3 h-3 transition-transform duration-200 ${showFeedDropdown ? '' : 'rotate-180'}`} />
+        </button>
+        <AnimatePresence>
+          {showFeedDropdown && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowFeedDropdown(false)} />
+              <motion.div
+                initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                transition={{ duration: 0.15 }}
+                className="absolute top-full right-0 mt-1.5 z-50 bg-white rounded-2xl shadow-xl border border-slate-100/80 overflow-hidden py-1 w-40"
+              >
+                {TABS.map((tab) => {
+                  const Icon = tab.icon;
+                  const active = feedMode === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => { setFeedMode(tab.id as any); setShowFeedDropdown(false); }}
+                      className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-[12px] font-bold transition-colors ${active ? 'bg-primary/5 text-primary' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      {tab.label}
+                      {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
+                    </button>
+                  );
+                })}
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Real-time Injection Banner */}

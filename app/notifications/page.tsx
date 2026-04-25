@@ -29,6 +29,8 @@ const COLOR_CLASSES: Record<NotificationColor, { icon: string; bg: string; borde
   violet:  { icon: 'text-violet-600',  bg: 'bg-violet-50',   border: 'border-violet-100',   dot: 'bg-violet-500' },
   emerald: { icon: 'text-emerald-600', bg: 'bg-emerald-50',  border: 'border-emerald-100',  dot: 'bg-emerald-500' },
   amber:   { icon: 'text-amber-500',   bg: 'bg-amber-50',    border: 'border-amber-100',    dot: 'bg-amber-500' },
+  rose:    { icon: 'text-rose-500',    bg: 'bg-rose-50',     border: 'border-rose-100',     dot: 'bg-rose-500' },
+  orange:  { icon: 'text-orange-500',  bg: 'bg-orange-50',   border: 'border-orange-100',   dot: 'bg-orange-500' },
   primary: { icon: 'text-primary',     bg: 'bg-primary/10',  border: 'border-primary/20',   dot: 'bg-primary' },
 };
 
@@ -307,7 +309,7 @@ export default function NotificationsPage() {
     const unsub = subscribeToNotifications(profile.uid, (items) => {
       setNotifications(items);
       setLoading(false);
-    }, 80);
+    });
     return unsub;
   }, [profile, isAuthReady]);
 

@@ -381,10 +381,10 @@ export default function CommunitiesPage() {
                   <Link
                     href={`/communities/${community.id}`}
                     key={community.id}
-                    className="group flex h-full flex-col overflow-hidden rounded-[28px] border border-border/50 bg-white shadow-sm transition-all hover:shadow-md"
+                    className="group flex h-full flex-col overflow-hidden rounded-[20px] border border-border/50 bg-white shadow-sm transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/15"
                   >
                     <div
-                      className="relative h-32 shrink-0 overflow-hidden"
+                      className="relative h-24 shrink-0 overflow-hidden"
                       style={!community.coverURL ? buildCommunityCoverStyle(accent) : undefined}
                     >
                       {community.coverURL ? (
@@ -398,9 +398,9 @@ export default function CommunitiesPage() {
                         />
                       ) : null}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
-                      <div className="absolute bottom-4 left-4 flex items-center gap-3">
+                      <div className="absolute bottom-3 left-3 flex items-center gap-2.5">
                         <div
-                          className="relative h-14 w-14 overflow-hidden rounded-[18px] border border-white/35 bg-white/10 shadow-lg backdrop-blur-md"
+                          className="relative h-11 w-11 overflow-hidden rounded-[14px] border border-white/35 bg-white/10 shadow-lg backdrop-blur-md"
                           style={{ boxShadow: `0 12px 24px ${hexToRgba(accent, 0.22)}` }}
                         >
                           {community.image ? (
@@ -408,7 +408,7 @@ export default function CommunitiesPage() {
                               src={community.image}
                               alt=""
                               fill
-                              sizes="56px"
+                              sizes="44px"
                               referrerPolicy="no-referrer"
                               className="object-cover"
                             />
@@ -419,14 +419,14 @@ export default function CommunitiesPage() {
                           )}
                         </div>
                         <div className="text-white">
-                          <h3 className="text-lg font-bold transition-colors group-hover:text-white">
+                          <h3 className="text-[15px] font-bold leading-tight transition-colors group-hover:text-white">
                             {community.name}
                           </h3>
-                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] font-semibold text-white/80">
-                            <span className="rounded-full bg-white/12 px-2.5 py-1 backdrop-blur-sm">
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-white/80">
+                            <span className="rounded-full bg-white/12 px-2 py-0.5 backdrop-blur-sm">
                               {(community.memberCount || 0).toLocaleString('pt-BR')} membros
                             </span>
-                            <span className="rounded-full bg-white/12 px-2.5 py-1 backdrop-blur-sm">
+                            <span className="rounded-full bg-white/12 px-2 py-0.5 backdrop-blur-sm">
                               {community.type === 'Public' ? 'Pública' : 'Privada'}
                             </span>
                           </div>
@@ -434,36 +434,33 @@ export default function CommunitiesPage() {
                       </div>
                     </div>
 
-                    <div className="flex flex-1 flex-col p-5">
-                      <p className="mb-4 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+                    <div className="flex flex-1 flex-col p-4">
+                      <p className="mb-3 line-clamp-1 text-[13px] leading-relaxed text-muted-foreground">
                         {community.description}
                       </p>
 
                       {community.pinnedTopics?.length > 0 && (
-                        <div className="mb-4 flex flex-wrap gap-2">
-                          {community.pinnedTopics.slice(0, 3).map((topic: string) => (
-                            <span
-                              key={topic}
-                              className="rounded-full px-3 py-1 text-[11px] font-bold"
-                              style={{
-                                color: accent,
-                                backgroundColor: hexToRgba(accent, 0.1),
-                              }}
+                        <div className="mb-3 space-y-1.5">
+                          {community.pinnedTopics.slice(0, 2).map((topic: string, index: number) => (
+                            <div
+                              key={`${topic}-${index}`}
+                              className="flex items-start gap-2 rounded-lg bg-muted/35 px-2.5 py-1.5 text-[12px] leading-snug text-foreground/80"
                             >
-                              #{topic}
-                            </span>
+                              <Tag className="mt-[1px] h-3.5 w-3.5 shrink-0" style={{ color: accent }} />
+                              <span className="line-clamp-1">{topic}</span>
+                            </div>
                           ))}
                         </div>
                       )}
 
-                      <div className="mb-4 flex items-center gap-3 text-[13px] text-muted-foreground">
+                      <div className="mb-3 flex items-center gap-3 text-[12px] text-muted-foreground">
                         <span className="flex items-center gap-1">
-                          <Users className="h-4 w-4" />
+                          <Users className="h-3.5 w-3.5" />
                           {(community.memberCount || 0).toLocaleString('pt-BR')} membros
                         </span>
                         {community.friendMembersCount > 0 && (
                           <span className="flex items-center gap-1 font-semibold" style={{ color: accent }}>
-                            <UserPlus className="h-4 w-4" />
+                            <UserPlus className="h-3.5 w-3.5" />
                             {community.friendMembersCount} amigo
                             {community.friendMembersCount > 1 ? 's' : ''} aqui
                           </span>
@@ -472,10 +469,10 @@ export default function CommunitiesPage() {
 
                       <button
                         onClick={(e) => handleJoinLeave(e, community)}
-                        className={`mt-auto w-full rounded-xl py-2.5 text-sm font-bold transition-all ${
+                        className={`mt-auto w-full rounded-xl py-2 text-[13px] font-bold transition-all ${
                           isMember
                             ? 'bg-muted text-muted-foreground hover:bg-red-50 hover:text-red-600'
-                            : ''
+                            : 'hover:bg-muted/30'
                         }`}
                         style={
                           isMember

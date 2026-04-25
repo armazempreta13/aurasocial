@@ -1,16 +1,17 @@
 @import "tailwindcss";
 
 @theme {
-  --color-background: #F7F7F9;
+  --color-background: #f8f9fb;
   --color-foreground: #111827;
-  --color-primary: #6366F1;
-  --color-primary-hover: #4F46E5;
+  --color-primary: #7c3aed;
+  --color-primary-hover: #6d28d9;
   --color-secondary: #FFFFFF;
-  --color-secondary-hover: #F3F4F6;
+  --color-secondary-hover: #F4F5F9;
   --color-accent: #8B5CF6;
-  --color-muted: #F3F4F6;
+  --color-muted: #F2F3F7;
   --color-muted-foreground: #6B7280;
-  --color-border: #E5E7EB;
+  --color-border: #EEF0F5;
+  --color-ring: rgba(124, 58, 237, 0.35);
   
   --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
@@ -18,6 +19,55 @@
 @layer base {
   body {
     @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer components {
+  .aura-container {
+    @apply w-full max-w-[1440px] mx-auto px-4;
+  }
+
+  .aura-panel {
+    @apply bg-secondary border border-border rounded-2xl;
+    box-shadow:
+      0 1px 0 rgba(16, 24, 40, 0.02),
+      0 8px 24px rgba(17, 24, 39, 0.06);
+  }
+
+  .aura-panel-soft {
+    @apply bg-secondary border border-border rounded-2xl;
+    box-shadow:
+      0 1px 0 rgba(16, 24, 40, 0.02),
+      0 6px 18px rgba(17, 24, 39, 0.05);
+  }
+
+  .aura-input {
+    @apply bg-muted text-slate-700 placeholder:text-slate-400 border border-transparent outline-none;
+  }
+
+  .aura-input:focus {
+    box-shadow: 0 0 0 4px var(--color-ring);
+  }
+
+  .aura-btn-primary {
+    @apply bg-primary hover:bg-primary-hover text-white font-bold transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100;
+    box-shadow:
+      0 1px 0 rgba(16, 24, 40, 0.04),
+      0 8px 18px rgba(124, 58, 237, 0.18);
+  }
+
+  .aura-icon-btn {
+    @apply rounded-full text-slate-500 hover:bg-secondary-hover transition-colors;
+  }
+
+  .aura-link {
+    @apply text-primary hover:underline;
+  }
+}
+
+@layer base {
+  textarea::placeholder {
+    opacity: 1;
   }
 }
 
@@ -154,3 +204,20 @@
 
 .divider-line:nth-child(1) { animation-delay: 0.15s; }
 .divider-line:nth-child(3) { animation-delay: 0.15s; }
+
+/* Animação sutil para novas notificações */
+@keyframes pulseSubtle {
+  0% {
+    background-color: rgba(124, 58, 237, 0.03);
+  }
+  50% {
+    background-color: rgba(124, 58, 237, 0.08);
+  }
+  100% {
+    background-color: rgba(124, 58, 237, 0.03);
+  }
+}
+
+.animate-pulse-subtle {
+  animation: pulseSubtle 2s ease-in-out infinite;
+}

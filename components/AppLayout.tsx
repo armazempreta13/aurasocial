@@ -4,16 +4,20 @@ import dynamic from 'next/dynamic';
 import { useAppStore } from '@/lib/store';
 import { Feed } from './Feed';
 import { CreatePost } from './CreatePost';
-import { TopNav } from './TopNav';
 import { BottomNav } from './BottomNav';
 import '@/lib/i18n';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
+import { TopNav } from './TopNav';
+import { OnboardingFlow } from './OnboardingFlow';
+import { useEffect } from 'react';
+
+import { useSearchParams } from 'next/navigation';
 
 const Sidebar = dynamic(() => import('./Sidebar').then((mod) => mod.Sidebar), {
   ssr: false,
 });
 
-const RightPanel = dynamic(() => import('./RightPanel').then((mod) => mod.RightPanel), {
+const ContextDockDynamic = dynamic(() => import('@/components/dock/ContextDock').then((mod) => mod.ContextDock), {
   ssr: false,
 });
 
@@ -36,6 +40,17 @@ export function AppLayout({
 }) {
   const { user, isAuthReady } = useRequireAuth();
   const focusMode = useAppStore((state) => state.focusMode);
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (searchParams?.get('compose') !== '1') return;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const t = window.setTimeout(() => {
+      document.getElementById('create-post-textarea')?.focus();
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [searchParams]);
 
   if (!isAuthReady || !user) {
     return (
@@ -48,45 +63,59 @@ export function AppLayout({
   const showSidebar = !focusMode && !hideSidebar;
   const showRightPanel = !focusMode && !hideRightPanel;
 
+  const gridColsClass = showSidebar
+    ? showRightPanel
+      ? 'grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_260px]'
+      : 'grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_260px]'
+    : showRightPanel
+      ? 'grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_260px]'
+      : 'grid-cols-1 lg:grid-cols-[minmax(0,1fr)]';
+
   return (
     <div className="min-h-screen bg-background">
       <TopNav />
       <CallManager />
+      <OnboardingFlow />
+
 
       {/* Main Layout */}
-      <div className={plain ? "" : "pt-[64px] flex justify-center w-full max-w-[1440px] mx-auto relative border-x border-border/40 min-h-screen"}>
+      <div className={plain ? "" : "aura-container"}>
         {plain ? (
           <div className="pt-[64px] min-h-screen w-full">
             {children}
           </div>
         ) : (
-          <>
+          <div className={`w-full grid ${gridColsClass} gap-x-8`}>
             {/* Left Sidebar */}
-            {showSidebar && (
-              <div className="hidden xl:block w-[280px] fixed left-[max(0px,calc((100vw-1440px)/2))] top-[64px] h-[calc(100vh-64px)] overflow-y-auto p-6 scrollbar-hide">
-                <Sidebar />
-              </div>
-            )}
+            <aside className="hidden lg:flex lg:justify-start sticky top-0 h-screen pt-[84px]">
+              {showSidebar ? <div className="w-[260px]"><Sidebar /></div> : <div className="w-[260px]" />}
+            </aside>
 
             {/* Main Content */}
-            <main className={`w-full ${wide ? 'max-w-[1000px]' : 'max-w-[640px]'} px-4 pb-20 md:pb-12 transition-all duration-300 ${focusMode || (hideSidebar && hideRightPanel) ? 'mx-auto' : ''} ${showSidebar ? 'xl:ml-[280px]' : ''} ${showRightPanel ? 'lg:mr-[320px]' : ''}`}>
-              {children || (
-                <div className="space-y-6 pt-6">
-                  <CreatePost />
-                  <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                    <Feed />
+            <main className="pb-12 pt-[60px]">
+              <div className={`w-full ${wide ? 'max-w-[1100px]' : 'max-w-[860px]'} mx-auto`}>
+                {children || (
+                  <div className="pt-2">
+                    <CreatePost />
+                    <div className="pt-2">
+                      <Feed />
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </main>
 
             {/* Right Panel */}
-            {showRightPanel && (
-              <div className="hidden lg:block w-[320px] fixed right-[max(0px,calc((100vw-1440px)/2))] top-[64px] h-[calc(100vh-64px)] overflow-y-auto p-6 scrollbar-hide">
-                <RightPanel />
-              </div>
-            )}
-          </>
+            <aside className="hidden lg:flex lg:justify-end sticky top-0 h-screen pt-[84px]">
+              {showRightPanel ? (
+                <div className="hidden xl:block w-[260px]">
+                  <ContextDockDynamic />
+                </div>
+              ) : (
+                <div className="w-[260px]" />
+              )}
+            </aside>
+          </div>
         )}
       </div>
       <BottomNav />

@@ -42,6 +42,7 @@ import {
   LogOut,
   Bell,
   ShieldAlert,
+  Tag,
 } from 'lucide-react';
 import { Feed } from '@/components/Feed';
 import { CreatePost } from '@/components/CreatePost';
@@ -573,7 +574,7 @@ export default function CommunityDetailPage() {
         variant="info"
       />
 
-      <div className="mb-6">
+      <div className="mb-10">
         <button
           onClick={() => router.back()}
           className="group mb-6 flex items-center gap-2 pt-2 text-muted-foreground transition-colors hover:text-primary"
@@ -642,18 +643,17 @@ export default function CommunityDetailPage() {
                   </div>
                 </div>
 
-                <div className="mt-2 flex w-full md:w-auto shrink-0 gap-2 md:gap-3 flex-wrap md:flex-nowrap pb-1 md:pb-0">
+                <div className="hidden">
                   <button
                     onClick={handleInvite}
-                    className="flex h-10 md:h-11 items-center gap-1 md:gap-2 rounded-xl md:rounded-2xl border border-white/30 bg-white/10 px-3 md:px-5 text-[12px] md:text-[13px] font-black text-white backdrop-blur-md transition-all hover:bg-white/20 active:scale-95 whitespace-nowrap"
+                    className="flex h-10 md:h-11 shrink-0 items-center gap-1 md:gap-2 rounded-xl md:rounded-2xl border border-white/30 bg-white/10 px-3 md:px-5 text-[12px] md:text-[13px] font-black text-white backdrop-blur-md transition-all hover:bg-white/20 active:scale-95 whitespace-nowrap"
                   >
                     <Plus className="h-4 w-4" />
-                    <span className="hidden md:inline">Convidar</span>
-                    <span className="md:hidden">Add</span>
+                    <span>Convidar</span>
                   </button>
                   <button
                     onClick={handleShareCommunity}
-                    className="flex h-10 md:h-11 items-center gap-1 md:gap-2 rounded-xl md:rounded-2xl border border-white/30 bg-white/10 px-3 md:px-5 text-[12px] md:text-[13px] font-black text-white backdrop-blur-md transition-all hover:bg-white/20 active:scale-95 whitespace-nowrap"
+                    className="flex h-10 md:h-11 shrink-0 items-center gap-1 md:gap-2 rounded-xl md:rounded-2xl border border-white/30 bg-white/10 px-3 md:px-5 text-[12px] md:text-[13px] font-black text-white backdrop-blur-md transition-all hover:bg-white/20 active:scale-95 whitespace-nowrap"
                   >
                     <Link2 className="h-4 w-4" />
                     <span className="hidden md:inline">Compartilhar</span>
@@ -663,7 +663,7 @@ export default function CommunityDetailPage() {
                     <button
                       onClick={() => setShowMemberMenu(!showMemberMenu)}
                       disabled={!isMember && joinRequestPending && community?.security?.requireApproval}
-                      className="flex w-full md:w-auto justify-center h-10 md:h-11 items-center gap-2 rounded-xl md:rounded-2xl px-4 md:px-6 font-black text-white shadow-lg transition-all hover:opacity-95 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                      className="flex w-full md:w-auto shrink-0 justify-center h-10 md:h-11 items-center gap-2 rounded-xl md:rounded-2xl px-4 md:px-6 font-black text-white shadow-lg transition-all hover:opacity-95 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                       style={
                         !isMember && !(joinRequestPending && community?.security?.requireApproval)
                           ? {
@@ -724,6 +724,113 @@ export default function CommunityDetailPage() {
                     )}
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-4 py-4 md:px-8">
+            <div className="flex items-center justify-end gap-2 overflow-x-auto no-scrollbar">
+              {(isAdmin || isStaff) && (
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="flex h-9 shrink-0 items-center gap-2 rounded-xl border border-border/40 bg-white px-3 text-[13px] font-black text-foreground transition-colors hover:bg-muted/30 active:scale-95 whitespace-nowrap"
+                  title="Configurar comunidade"
+                >
+                  <Settings className="h-4 w-4" />
+                  <span className="hidden sm:inline">Configurar</span>
+                </button>
+              )}
+              <button
+                onClick={handleInvite}
+                className="flex h-9 shrink-0 items-center gap-2 rounded-xl border border-border/40 bg-white px-3 text-[13px] font-black text-foreground transition-colors hover:bg-muted/30 active:scale-95 whitespace-nowrap"
+                title="Convidar"
+              >
+                <Plus className="h-4 w-4" />
+                Convidar
+              </button>
+              <button
+                onClick={handleShareCommunity}
+                className="flex h-9 shrink-0 items-center gap-2 rounded-xl border border-border/40 bg-white px-3 text-[13px] font-black text-foreground transition-colors hover:bg-muted/30 active:scale-95 whitespace-nowrap"
+                title="Compartilhar"
+              >
+                <Link2 className="h-4 w-4" />
+                <span className="hidden sm:inline">Compartilhar</span>
+                <span className="sm:hidden">Link</span>
+              </button>
+
+              <div className="relative shrink-0">
+                <button
+                  onClick={() => {
+                    if (isMember) {
+                      setShowMemberMenu(!showMemberMenu);
+                      return;
+                    }
+                    if (joinRequestPending && community?.security?.requireApproval) return;
+                    handleJoinLeaveAction();
+                  }}
+                  disabled={!isMember && joinRequestPending && community?.security?.requireApproval}
+                  className={`flex h-9 items-center justify-center gap-2 rounded-xl px-4 text-[13px] font-black transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap ${
+                    isMember
+                      ? 'border border-border/40 bg-muted/20 text-foreground hover:bg-muted/30'
+                      : 'text-white hover:opacity-95'
+                  }`}
+                  style={
+                    isMember
+                      ? undefined
+                      : {
+                          backgroundColor: themeColor,
+                          boxShadow: `0 10px 20px ${hexToRgba(themeColor, 0.28)}`,
+                        }
+                  }
+                >
+                  {isMember ? (
+                    <>
+                      <Check className="h-4 w-4" />
+                      <span>Entrou</span>
+                      <ChevronDown
+                        className={`h-4 w-4 transition-transform duration-300 ${showMemberMenu ? 'rotate-180' : ''}`}
+                      />
+                    </>
+                  ) : joinRequestPending && community?.security?.requireApproval ? (
+                    'Pendente'
+                  ) : (
+                    'Entrar'
+                  )}
+                </button>
+
+                {isMember && showMemberMenu && (
+                  <div className="absolute right-0 top-full mt-2 w-64 z-[1000] animate-in fade-in zoom-in-95 slide-in-from-top-4 duration-300">
+                    <div className="rounded-[28px] border border-slate-200 bg-white p-2 shadow-[0_30px_60px_rgba(0,0,0,0.25)]">
+                      <button
+                        onClick={() => {
+                          setShowMemberMenu(false);
+                          void toggleMute();
+                        }}
+                        className="flex w-full items-center gap-3 rounded-2xl px-5 py-4 text-left text-[14px] font-bold text-slate-800 transition-all hover:bg-slate-100 active:scale-[0.98]"
+                      >
+                        <div
+                          className={`flex h-8 w-8 items-center justify-center rounded-lg ${muted ? 'bg-rose-100' : 'bg-primary/10'}`}
+                        >
+                          <Bell className={`h-4 w-4 ${muted ? 'text-rose-500' : 'text-primary'}`} />
+                        </div>
+                        {muted ? 'Ativar notificaÃ§Ãµes' : 'Silenciar espaÃ§o'}
+                      </button>
+                      <div className="h-px bg-slate-100 my-1 mx-2 opacity-50" />
+                      <button
+                        onClick={() => {
+                          setShowMemberMenu(false);
+                          setIsLeaveModalOpen(true);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-2xl px-5 py-4 text-left text-[14px] font-bold text-rose-500 transition-all hover:bg-rose-50 active:scale-[0.98]"
+                      >
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-100">
+                          <LogOut className="h-4 w-4" />
+                        </div>
+                        Sair da comunidade
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -830,7 +937,8 @@ export default function CommunityDetailPage() {
             </div>
           </div>
 
-          <div className="grid gap-6 bg-white/50 p-8 backdrop-blur-sm lg:grid-cols-[1.15fr_0.85fr]">
+          {false && (
+          <div className="grid gap-5 bg-white/50 p-4 backdrop-blur-sm md:p-8 lg:grid-cols-[1.15fr_0.85fr]">
             <div id="comm-about" className="group/sobre relative scroll-mt-24">
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-[12px] font-black uppercase tracking-[0.2em] text-muted-foreground/45">
@@ -846,40 +954,37 @@ export default function CommunityDetailPage() {
                   </button>
                 )}
               </div>
-              <div className="max-w-4xl text-lg font-medium leading-relaxed text-foreground/80">
+              <div className="max-w-4xl text-[15px] font-medium leading-relaxed text-foreground/80 md:text-lg">
                 {community.description ? renderTextWithLinks(community.description) : 'Esta comunidade ainda não possui uma descrição.'}
               </div>
 
               {!!community.pinnedTopics?.length && (
-                <div className="mt-5 flex flex-wrap gap-2">
-                  {community.pinnedTopics.map((topic: string) => (
-                    <span
-                      key={topic}
-                      className="rounded-full px-3 py-1 text-[12px] font-bold"
-                      style={{
-                        color: themeColor,
-                        backgroundColor: hexToRgba(themeColor, 0.1),
-                      }}
+                <div className="mt-5 space-y-2">
+                  {community.pinnedTopics.slice(0, 4).map((topic: string, index: number) => (
+                    <div
+                      key={`${topic}-${index}`}
+                      className="flex items-start gap-2 rounded-xl bg-muted/35 px-3 py-2 text-[13px] leading-snug text-foreground/80"
                     >
-                      #{topic}
-                    </span>
+                      <Tag className="mt-[2px] h-4 w-4 shrink-0" style={{ color: themeColor }} />
+                      <span className="line-clamp-1">{topic}</span>
+                    </div>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="mt-6 rounded-[28px] border border-border/50 bg-white p-5 shadow-sm">
+            <div className="mt-0 rounded-[28px] border border-border/50 bg-white p-5 shadow-sm lg:mt-6">
               <div className="mb-4 flex items-center gap-2">
                 <h3 className="font-bold text-foreground">Presença da comunidade</h3>
               </div>
               <div className="space-y-3 text-sm">
-                {memberSince && (
+                {memberSince ? (
                   <div className="flex items-start gap-3">
                     <CalendarDays className="mt-0.5 h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="font-semibold text-foreground">Você entrou em</p>
                       <p className="text-muted-foreground">
-                        {memberSince.toLocaleDateString('pt-BR', {
+                        {memberSince!.toLocaleDateString('pt-BR', {
                           day: '2-digit',
                           month: 'long',
                           year: 'numeric',
@@ -887,7 +992,7 @@ export default function CommunityDetailPage() {
                       </p>
                     </div>
                   </div>
-                )}
+                ) : null}
                 <div className="flex items-start gap-3">
                   <Eye className="mt-0.5 h-4 w-4 text-muted-foreground" />
                   <div>
@@ -923,6 +1028,7 @@ export default function CommunityDetailPage() {
               </div>
             </div>
           </div>
+          )}
         </div>
 
         {weeklyHighlight?.postTitle && activeTab !== 'highlights' && (
@@ -963,8 +1069,8 @@ export default function CommunityDetailPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-          <div id="comm-discussion" className="lg:col-span-2 scroll-mt-24">
+        <div className="grid grid-cols-1 gap-8 md:grid-cols-[minmax(0,1fr)_420px] md:gap-10 2xl:grid-cols-[minmax(0,1fr)_460px]">
+          <div id="comm-discussion" className="scroll-mt-24">
             {isMember ? (
               <>
                 {pendingApprovalCount > 0 && (
@@ -1031,7 +1137,12 @@ export default function CommunityDetailPage() {
                     </div>
                   </div>
                 ) : activeTab === 'media' ? (
-                  <Feed communityId={community.id} type="media" searchQuery={communitySearchQuery} />
+                  <Feed
+                    communityId={community.id}
+                    type="media"
+                    searchQuery={communitySearchQuery}
+                    containerClassName="w-full max-w-none"
+                  />
                 ) : activeTab === 'highlights' ? (
                   <>
                     {weeklyHighlight ? (
@@ -1052,7 +1163,12 @@ export default function CommunityDetailPage() {
                         <p className="mt-2 text-sm text-muted-foreground">Ainda não há destaque desta semana.</p>
                       </div>
                     )}
-                    <Feed communityId={community.id} pinnedPostIds={community.pinnedPostIds} searchQuery={communitySearchQuery} />
+                    <Feed
+                      communityId={community.id}
+                      pinnedPostIds={community.pinnedPostIds}
+                      searchQuery={communitySearchQuery}
+                      containerClassName="w-full max-w-none"
+                    />
                   </>
                 ) : activeTab === 'about' ? (
                   <div className="rounded-[28px] border border-border/50 bg-white p-6 shadow-sm">
@@ -1061,18 +1177,15 @@ export default function CommunityDetailPage() {
                       {community.description ? renderTextWithLinks(community.description) : 'Esta comunidade ainda não possui uma descrição.'}
                     </div>
                     {!!community.pinnedTopics?.length && (
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {community.pinnedTopics.map((topic: string) => (
-                          <span
-                            key={topic}
-                            className="rounded-full px-3 py-1 text-[12px] font-bold"
-                            style={{
-                              color: themeColor,
-                              backgroundColor: hexToRgba(themeColor, 0.1),
-                            }}
+                      <div className="mt-5 space-y-2">
+                        {community.pinnedTopics.slice(0, 6).map((topic: string, index: number) => (
+                          <div
+                            key={`${topic}-${index}`}
+                            className="flex items-start gap-2 rounded-xl bg-muted/30 px-3 py-2 text-[13px] leading-snug text-foreground/80"
                           >
-                            #{topic}
-                          </span>
+                            <Tag className="mt-[2px] h-4 w-4 shrink-0" style={{ color: themeColor }} />
+                            <span className="line-clamp-2">{topic}</span>
+                          </div>
                         ))}
                       </div>
                     )}
@@ -1082,6 +1195,7 @@ export default function CommunityDetailPage() {
                     communityId={community.id}
                     pinnedPostIds={community.pinnedPostIds}
                     searchQuery={communitySearchQuery}
+                    containerClassName="w-full max-w-none"
                   />
                 )}
               </>
@@ -1163,13 +1277,50 @@ export default function CommunityDetailPage() {
             )}
           </div>
 
-          <div className="space-y-6">
+          <div className="space-y-6 md:sticky md:top-[96px] self-start">
             <div className="rounded-3xl border border-border/50 bg-white p-6 shadow-sm">
               <h3 className="mb-4 flex items-center gap-2 font-bold">
                 <Shield className="h-5 w-5" style={{ color: themeColor }} />
                 Sobre este espaço
               </h3>
               <div className="space-y-4 text-sm">
+                {community.description ? (
+                  <div className="rounded-2xl border border-border/40 bg-muted/20 p-4 text-[13px] leading-relaxed text-muted-foreground">
+                    <div className="line-clamp-4">{renderTextWithLinks(community.description, { inline: true })}</div>
+                  </div>
+                ) : null}
+
+                {!!community.pinnedTopics?.length && (
+                  <div className="space-y-2">
+                    {community.pinnedTopics.slice(0, 4).map((topic: string, index: number) => (
+                      <div
+                        key={`${topic}-${index}`}
+                        className="flex items-start gap-2 rounded-xl bg-muted/30 px-3 py-2 text-[13px] leading-snug text-foreground/80"
+                      >
+                        <Tag className="mt-[2px] h-4 w-4 shrink-0" style={{ color: themeColor }} />
+                        <span className="line-clamp-1">{topic}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {memberSince ? (
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted">
+                      <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="font-bold">Voce entrou em</p>
+                      <p className="text-muted-foreground">
+                        {memberSince!.toLocaleDateString('pt-BR', {
+                          day: '2-digit',
+                          month: 'long',
+                          year: 'numeric',
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="flex items-start gap-3">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted">
                     {community.type === 'Public' ? (
@@ -1202,10 +1353,32 @@ export default function CommunityDetailPage() {
                   <div>
                     <p className="font-bold">Comunidade viva</p>
                     <p className="text-muted-foreground">
-                      {(community.memberCount || 0).toLocaleString('pt-BR')} membros {onlineCount > 0 && `• ${onlineCount} online agora `} • {recentActivityCount > 0 ? `${recentActivityCount} posts hoje` : 'Sempre ativa'}
+                      {(community.memberCount || 0).toLocaleString('pt-BR')} membros
+                      {onlineCount > 0 ? ` - ${onlineCount} online agora` : ''}
+                      {recentActivityCount > 0 ? ` - ${recentActivityCount} posts hoje` : ' - Sempre ativa'}
                     </p>
                   </div>
                 </div>
+
+                {!!community.links?.length && (
+                  <div className="space-y-2 border-t border-border/40 pt-4">
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-muted-foreground/60">
+                      Links uteis
+                    </p>
+                    {community.links.slice(0, 5).map((linkItem: { label: string; url: string }) => (
+                      <Link
+                        key={`${linkItem.label}-${linkItem.url}`}
+                        href={linkItem.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-2 font-semibold text-foreground transition-colors hover:text-primary"
+                      >
+                        <Link2 className="h-4 w-4" style={{ color: themeColor }} />
+                        <span className="line-clamp-1">{linkItem.label}</span>
+                      </Link>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 

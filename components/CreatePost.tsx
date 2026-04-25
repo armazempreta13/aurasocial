@@ -1,212 +1,251 @@
 'use client';
 
-import { useMemo, useRef, useState, useCallback } from 'react';
-import { Image as ImageIcon, Video, Hash, X, Upload, Loader2, Globe, Users, ChevronDown, BarChart2, Plus, Minus, Bold, Italic, Quote, Smile } from 'lucide-react';
-import { useAppStore } from '@/lib/store';
-import { collection, doc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { db } from '@/firebase';
-import { handleFirestoreError, OperationType } from '@/lib/firebase-errors';
-import { UploadResult } from '@/lib/image-utils';
-import { uploadMedia, MediaKind } from '@/lib/media-utils';
-import { extractHashtags, rankTrendingHashtags } from '@/lib/hashtags';
-import { useTranslation } from 'react-i18next';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Image as ImageIcon, Smile, X, BarChart3, Plus, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { renderTextWithLinks } from '@/lib/mentions';
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+
+import { useAppStore } from '@/lib/store';
+import { db } from '@/firebase';
+import { extractHashtags } from '@/lib/hashtags';
+import { validateContent } from '@/lib/moderation/utils';
+import { uploadImage } from '@/lib/image-utils';
+
 import { MentionSuggestions } from './MentionSuggestions';
 import { HashtagSuggestions } from './HashtagSuggestions';
-import { soundEffects } from '@/lib/sound-effects';
-import { validateContent } from '@/lib/moderation/utils';
-import { ActionModal } from './ActionModal';
 
+type CreatePostProps = {
+  communityId?: string;
+  communityName?: string;
+  communitySecurity?: any;
+  isCommunityStaff?: boolean;
+};
+
+const DEFAULT_TAG_SUGGESTIONS = ['vida', 'inspiração', 'tecnologia', 'fotografia', 'desenvolvimento'];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Emoji Picker (simple native grid)
+// ─────────────────────────────────────────────────────────────────────────────
+const EMOJI_LIST = [
+  '😀','😂','🥲','😍','🤩','😎','🥳','🤔','😮','😢','😡','🥺',
+  '👍','👎','❤️','🔥','✨','🎉','💯','💪','🙏','👏','🫶','🤝',
+  '😊','🤗','😴','🤯','🫠','🥴','😏','🤭','🫡','😇','🤓','🫢',
+  '🌟','⚡','🎯','🚀','💡','🎨','🌈','🌊','🍀','🌸','💎','👑',
+];
+
+function EmojiPicker({ onSelect, onClose }: { onSelect: (e: string) => void; onClose: () => void }) {
+  return (
+    <div className="absolute bottom-full right-0 mb-2 z-50 bg-white rounded-2xl shadow-2xl border border-slate-100 p-3 w-[240px]">
+      <div className="flex justify-between items-center mb-2">
+        <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Emojis</span>
+        <button onClick={onClose} className="text-slate-300 hover:text-slate-500 transition-colors">
+          <X size={14} />
+        </button>
+      </div>
+      <div className="grid grid-cols-8 gap-1">
+        {EMOJI_LIST.map((emoji) => (
+          <button
+            key={emoji}
+            onClick={() => onSelect(emoji)}
+            className="text-xl hover:scale-125 transition-transform rounded p-0.5"
+          >
+            {emoji}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GIF Picker (Giphy via public beta key / Tenor fallback)
+// ─────────────────────────────────────────────────────────────────────────────
+const GIPHY_KEY = process.env.NEXT_PUBLIC_GIPHY_API_KEY || 'dc6zaTOxFJmzC'; // public demo key
+
+function GifPicker({ onSelect, onClose }: { onSelect: (url: string, previewUrl: string) => void; onClose: () => void }) {
+  const [query, setQuery] = useState('');
+  const [gifs, setGifs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const debounceRef = useRef<any>(null);
+
+  const search = useCallback(async (q: string) => {
+    setLoading(true);
+    try {
+      const endpoint = q.trim()
+        ? `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(q)}&limit=16&rating=g`
+        : `https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_KEY}&limit=16&rating=g`;
+      const res = await fetch(endpoint);
+      const data = await res.json();
+      setGifs(data.data || []);
+    } catch {
+      setGifs([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    search('');
+  }, [search]);
+
+  const handleQueryChange = (val: string) => {
+    setQuery(val);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => search(val), 400);
+  };
+
+  return (
+    <div className="absolute bottom-full right-0 mb-2 z-50 bg-white rounded-2xl shadow-2xl border border-slate-100 w-[280px]">
+      <div className="flex items-center justify-between px-3 pt-3 pb-2">
+        <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">GIF</span>
+        <button onClick={onClose} className="text-slate-300 hover:text-slate-500 transition-colors">
+          <X size={14} />
+        </button>
+      </div>
+      <div className="px-3 pb-2">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => handleQueryChange(e.target.value)}
+          placeholder="Buscar GIFs..."
+          autoFocus
+          className="w-full rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] outline-none placeholder:text-slate-300 focus:border-primary/40"
+        />
+      </div>
+      <div className="grid grid-cols-2 gap-1 px-3 pb-3 max-h-[220px] overflow-y-auto">
+        {loading ? (
+          Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="aspect-video rounded-lg bg-slate-100 animate-pulse" />
+          ))
+        ) : gifs.length === 0 ? (
+          <p className="col-span-2 text-center text-[12px] text-slate-400 py-4">Nenhum GIF encontrado</p>
+        ) : (
+          gifs.map((gif: any) => {
+            const preview = gif.images?.fixed_width_small?.url || gif.images?.preview_gif?.url;
+            const full = gif.images?.downsized?.url || gif.images?.fixed_width?.url;
+            return (
+              <button
+                key={gif.id}
+                onClick={() => onSelect(full, preview)}
+                className="overflow-hidden rounded-lg hover:opacity-90 transition-opacity"
+              >
+                <img src={preview} alt={gif.title} className="w-full object-cover" loading="lazy" />
+              </button>
+            );
+          })
+        )}
+      </div>
+      <p className="text-center text-[9px] text-slate-300 pb-2">Powered by GIPHY</p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Poll Editor
+// ─────────────────────────────────────────────────────────────────────────────
+function PollEditor({
+  options,
+  onChange,
+  onRemove,
+}: {
+  options: string[];
+  onChange: (idx: number, val: string) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="mt-3 rounded-2xl border border-primary/20 bg-primary/5 p-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[11px] font-black text-primary uppercase tracking-widest">Enquete</span>
+        <button onClick={onRemove} className="text-slate-400 hover:text-rose-500 transition-colors">
+          <X size={14} />
+        </button>
+      </div>
+      <div className="flex flex-col gap-2">
+        {options.map((opt, idx) => (
+          <input
+            key={idx}
+            type="text"
+            value={opt}
+            onChange={(e) => onChange(idx, e.target.value)}
+            placeholder={`Opção ${idx + 1}`}
+            className="w-full rounded-xl border border-primary/20 bg-white px-3 py-1.5 text-[13px] outline-none placeholder:text-slate-300 focus:border-primary/50"
+          />
+        ))}
+        {options.length < 4 && (
+          <button
+            onClick={() => onChange(options.length, '')}
+            className="flex items-center gap-1.5 text-[11px] font-bold text-primary hover:text-primary/70 transition-colors"
+          >
+            <Plus size={12} /> Adicionar opção
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Component
+// ─────────────────────────────────────────────────────────────────────────────
 export function CreatePost({
   communityId,
   communityName,
   communitySecurity,
   isCommunityStaff,
-}: {
-  communityId?: string;
-  communityName?: string;
-  communitySecurity?: any;
-  isCommunityStaff?: boolean;
-}) {
-  const { t } = useTranslation('common');
+}: CreatePostProps) {
   const queryClient = useQueryClient();
   const { profile } = useAppStore();
-  const [content, setContent] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
-  const [imageMetadata, setImageMetadata] = useState<UploadResult | null>(null);
-  const [videoUrl, setVideoUrl] = useState('');
-  const [videoMetadata, setVideoMetadata] = useState<UploadResult | null>(null);
-  const [showImageInput, setShowImageInput] = useState(false);
-  const [visibility, setVisibility] = useState<'public' | 'friends'>('public');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [youtubeVideo, setYoutubeVideo] = useState<{ videoId: string, watchUrl: string, embedUrl: string } | null>(null);
-  const [uploadKind, setUploadKind] = useState<MediaKind>('image');
-  const [isDragging, setIsDragging] = useState(false);
-  const [mentionSearch, setMentionSearch] = useState<{ text: string, index: number } | null>(null);
-  const [hashtagSearch, setHashtagSearch] = useState<{ text: string, index: number } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+
+  const [content, setContent] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [mentionSearch, setMentionSearch] = useState<{ text: string; index: number } | null>(null);
+  const [hashtagSearch, setHashtagSearch] = useState<{ text: string; index: number } | null>(null);
+
+  // Image attachment
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+
+  // GIF attachment
+  const [gifUrl, setGifUrl] = useState<string | null>(null);
+  const [gifPreviewUrl, setGifPreviewUrl] = useState<string | null>(null);
+
+  // Toolbar popovers
+  const [showEmoji, setShowEmoji] = useState(false);
+  const [showGif, setShowGif] = useState(false);
+
+  // Poll
   const [showPoll, setShowPoll] = useState(false);
   const [pollOptions, setPollOptions] = useState(['', '']);
-  const [pollExpiration, setPollExpiration] = useState(24); // hours
-  const [mood, setMood] = useState<string | null>(null);
-  const [showMoodPicker, setShowMoodPicker] = useState(false);
-  const [showHashtagNudge, setShowHashtagNudge] = useState(false);
-  const [isBypassingNudge, setIsBypassingNudge] = useState(false);
+
   const hashtags = useMemo(() => extractHashtags(content), [content]);
 
-  // Show live preview when the text contains markdown markers
-  const hasMarkdown = useMemo(() =>
-    /\*\*|\*[^\s]|^> /m.test(content), [content]);
-
-  const MOODS = [
-    { id: 'excited', emoji: '🔥', label: 'Empolgado' },
-    { id: 'happy', emoji: '😄', label: 'Feliz' },
-    { id: 'thoughtful', emoji: '💭', label: 'Reflexivo' },
-    { id: 'motivated', emoji: '💪', label: 'Motivado' },
-    { id: 'curious', emoji: '🤔', label: 'Curioso' },
-    { id: 'grateful', emoji: '🙏', label: 'Grato' },
-    { id: 'creative', emoji: '✨', label: 'Criativo' },
-    { id: 'inspired', emoji: '🌟', label: 'Inspirado' },
-    { id: 'sad', emoji: '😢', label: 'Triste' },
-    { id: 'tired', emoji: '😴', label: 'Cansado' },
-    { id: 'focused', emoji: '🎯', label: 'Focado' },
-    { id: 'chill', emoji: '🌊', label: 'Zen' }
-  ];
-
-  // Insert markdown syntax at cursor position
-  const insertFormat = useCallback((syntax: string) => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    
-    let targetStart = start;
-    let targetEnd = end;
-    let selected = content.substring(start, end);
-
-    // Lógica Inteligente: Se nada estiver selecionado, pega a palavra sob o cursor
-    if (start === end) {
-      const textBefore = content.substring(0, start);
-      const textAfter = content.substring(start);
-      
-      const lastSpaceBefore = textBefore.lastIndexOf(' ');
-      const wordStart = lastSpaceBefore === -1 ? 0 : lastSpaceBefore + 1;
-      
-      const firstSpaceAfter = textAfter.search(/\s/);
-      const wordEnd = firstSpaceAfter === -1 ? content.length : start + firstSpaceAfter;
-
-      if (wordStart < wordEnd) {
-        targetStart = wordStart;
-        targetEnd = wordEnd;
-        selected = content.substring(targetStart, targetEnd);
+  // Close popovers when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (toolbarRef.current && !toolbarRef.current.contains(e.target as Node)) {
+        setShowEmoji(false);
+        setShowGif(false);
       }
-    }
-
-    const newText = content.substring(0, targetStart) + syntax + selected + syntax + content.substring(targetEnd);
-    setContent(newText);
-    
-    setTimeout(() => {
-      ta.focus();
-      const newPos = targetEnd + syntax.length * 2;
-      ta.setSelectionRange(newPos, newPos);
-    }, 0);
-  }, [content]);
-
-  const insertLineFormat = useCallback((prefix: string) => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart;
-    const lines = content.split('\n');
-    let currentPos = 0;
-    
-    const lineIndex = lines.findIndex(line => {
-      const lineEnd = currentPos + line.length;
-      if (start >= currentPos && start <= lineEnd + 1) return true;
-      currentPos = lineEnd + 1;
-      return false;
-    });
-
-    if (lineIndex !== -1) {
-      if (lines[lineIndex].startsWith(prefix)) {
-        lines[lineIndex] = lines[lineIndex].substring(prefix.length);
-      } else {
-        lines[lineIndex] = prefix + lines[lineIndex];
-      }
-      setContent(lines.join('\n'));
-    }
-  }, [content]);
-
-
-  const hashtagSuggestions = useMemo(() => {
-    // Only suggest hashtags that already exist in recent posts (avoid suggesting "fantasy" topics).
-    const cached = queryClient.getQueriesData({
-      predicate: (q) => Array.isArray((q as any)?.queryKey) && (q as any).queryKey[0] === 'posts',
-    });
-
-    const recentPosts: any[] = [];
-    for (const [, data] of cached) {
-      const pages = (data as any)?.pages;
-      if (!Array.isArray(pages)) continue;
-      for (const page of pages) {
-        const docs = page?.docs;
-        if (!Array.isArray(docs)) continue;
-        for (const d of docs) {
-          const item = typeof d?.data === 'function' ? d.data() : d?.data ? d.data : d;
-          if (item && typeof item === 'object') recentPosts.push(item);
-          if (recentPosts.length >= 120) break;
-        }
-        if (recentPosts.length >= 120) break;
-      }
-      if (recentPosts.length >= 120) break;
-    }
-
-    const trending = rankTrendingHashtags(recentPosts).map((x) => x.tag);
-    const allExisting = Array.from(
-      new Set(
-        recentPosts
-          .flatMap((p: any) => (Array.isArray(p?.hashtags) ? p.hashtags : []))
-          .map((t: string) => String(t || '').trim())
-          .filter(Boolean)
-          .map((t: string) => (t.startsWith('#') ? t : `#${t}`))
-      )
-    );
-
-    const all = [...trending, ...allExisting]
-      .filter((t) => t.startsWith('#'))
-      .map((t) => t.toLowerCase())
-      .filter((t) => !hashtags.map((h) => h.toLowerCase()).includes(t));
-
-    return Array.from(new Set(all));
-  }, [queryClient, hashtags]);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
     const cursor = e.target.selectionStart;
     setContent(value);
 
-    // Auto-detect mood if not manually set and content is significant
-    if (!mood && value.length > 8) {
-      const lower = value.toLowerCase();
-      if (lower.includes('feliz') || lower.includes('alegre') || lower.includes('top')) setMood('happy');
-      else if (lower.includes('triste') || lower.includes('bad') || lower.includes('foda')) setMood('sad');
-      else if (lower.includes('empolgado') || lower.includes('fogo') || lower.includes('bora')) setMood('excited');
-      else if (lower.includes('pensando') || lower.includes('duvida') || lower.includes('queria')) setMood('thoughtful');
-      else if (lower.includes('focado') || lower.includes('meta') || lower.includes('objetivo')) setMood('focused');
-      else if (lower.includes('cansado') || lower.includes('sono') || lower.includes('exaurido')) setMood('tired');
-      else if (lower.includes('paz') || lower.includes('zen') || lower.includes('tranquilo')) setMood('chill');
-      else if (lower.includes('grato') || lower.includes('obrigado') || lower.includes('valeu')) setMood('grateful');
-    }
-
-    // Detect if we are typing a mention or hashtag (nearest trigger before cursor wins)
     const textBeforeCursor = value.substring(0, cursor);
     const lastAt = textBeforeCursor.lastIndexOf('@');
     const lastHash = textBeforeCursor.lastIndexOf('#');
-    
-    const isMentionActive = lastAt !== -1 && (lastAt > lastHash);
-    const isHashtagActive = lastHash !== -1 && (lastHash > lastAt);
+
+    const isMentionActive = lastAt !== -1 && lastAt > lastHash;
+    const isHashtagActive = lastHash !== -1 && lastHash > lastAt;
 
     if (isMentionActive) {
       const textAfterAt = textBeforeCursor.substring(lastAt + 1);
@@ -232,682 +271,357 @@ export function CreatePost({
 
   const handleSelectMention = (user: any) => {
     if (!mentionSearch || !textareaRef.current) return;
-    
     const before = content.substring(0, mentionSearch.index);
     const after = content.substring(textareaRef.current.selectionStart);
-    const newContent = `${before}@${user.username} ${after}`;
-    
-    setContent(newContent);
+    setContent(`${before}@${user.username} ${after}`);
     setMentionSearch(null);
-    
-    // Set focus back to textarea
-    setTimeout(() => {
-      textareaRef.current?.focus();
-      const newCursor = mentionSearch.index + user.username.length + 2;
-      textareaRef.current?.setSelectionRange(newCursor, newCursor);
-    }, 0);
+    setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
   const handleSelectHashtag = (tag: string) => {
     if (!hashtagSearch || !textareaRef.current) return;
-
     const normalized = tag.startsWith('#') ? tag : `#${tag}`;
     const before = content.substring(0, hashtagSearch.index);
     const after = content.substring(textareaRef.current.selectionStart);
-    const newContent = `${before}${normalized} ${after}`;
-
-    setContent(newContent);
+    setContent(`${before}${normalized} ${after}`);
     setHashtagSearch(null);
-
-    setTimeout(() => {
-      textareaRef.current?.focus();
-      const newCursor = hashtagSearch.index + normalized.length + 1;
-      textareaRef.current?.setSelectionRange(newCursor, newCursor);
-    }, 0);
+    setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
-  const handleMediaUpload = async (file: File) => {
-    if (!profile) return;
-    
-    setIsUploading(true);
-    try {
-      if (file.type.startsWith('video/')) {
-        setUploadKind('video');
-        
-        // Frontend validation
-        const maxSize = 100 * 1024 * 1024; // 100MB
-        if (file.size > maxSize) {
-          throw new Error('O vídeo é muito grande. O limite é de 100MB.');
-        }
+  // ── Image button ────────────────────────────────────────────────────────────
+  const handleImageClick = () => {
+    setShowEmoji(false);
+    setShowGif(false);
+    fileInputRef.current?.click();
+  };
 
-        const formData = new FormData();
-        formData.append('file', file);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageFile(file);
+    setGifUrl(null);
+    setGifPreviewUrl(null);
+    const reader = new FileReader();
+    reader.onload = (ev) => setImagePreview(ev.target?.result as string);
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
-        const response = await fetch('/api/youtube/upload', {
-          method: 'POST',
-          body: formData,
-        });
+  const removeImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
+  };
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.details || errorData.error || 'Falha no upload para o YouTube');
-        }
+  // ── GIF selection ───────────────────────────────────────────────────────────
+  const handleGifSelect = (url: string, previewUrl: string) => {
+    setGifUrl(url);
+    setGifPreviewUrl(previewUrl);
+    setImageFile(null);
+    setImagePreview(null);
+    setShowGif(false);
+  };
 
-        const data = await response.json();
-        setYoutubeVideo({
-          videoId: data.videoId,
-          watchUrl: data.watchUrl,
-          embedUrl: data.embedUrl
-        });
-        setVideoUrl(data.watchUrl); // For preview purposes
-        setVideoMetadata({
-          kind: 'video',
-          url: data.watchUrl,
-          display_url: data.watchUrl,
-          delete_url: '',
-          width: 0,
-          height: 0,
-          mime: file.type,
-          size: file.size,
-        } as any);
-        
-        setImageUrl('');
-        setImageMetadata(null);
-      } else {
-        setUploadKind('image');
-        const result = await uploadMedia(file);
-        setImageUrl(result.url);
-        setImageMetadata(result);
-        setVideoUrl('');
-        setVideoMetadata(null);
-        setYoutubeVideo(null);
-      }
-      setShowImageInput(false);
-    } catch (error: any) {
-      console.error('Upload error:', error);
-      alert(error.message || 'Upload falhou. Por favor, tente novamente.');
-    } finally {
-      setIsUploading(false);
+  const removeGif = () => {
+    setGifUrl(null);
+    setGifPreviewUrl(null);
+  };
+
+  // ── Emoji insertion ─────────────────────────────────────────────────────────
+  const handleEmojiSelect = (emoji: string) => {
+    const el = textareaRef.current;
+    if (el) {
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      const newContent = content.substring(0, start) + emoji + content.substring(end);
+      setContent(newContent);
+      setTimeout(() => {
+        el.setSelectionRange(start + emoji.length, start + emoji.length);
+        el.focus();
+      }, 0);
+    } else {
+      setContent((c) => c + emoji);
+    }
+    setShowEmoji(false);
+  };
+
+  // ── Poll options ─────────────────────────────────────────────────────────────
+  const handlePollOptionChange = (idx: number, val: string) => {
+    if (idx >= pollOptions.length) {
+      setPollOptions((prev) => [...prev, val]);
+    } else {
+      setPollOptions((prev) => prev.map((o, i) => (i === idx ? val : o)));
     }
   };
 
-  const onFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      handleMediaUpload(e.target.files[0]);
-    }
-  };
+  const hasAttachment = !!(imagePreview || gifUrl);
+  const canPost = Boolean(profile?.uid) && (Boolean(content.trim()) || hasAttachment) && !isSubmitting;
 
-  const onDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const onDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleMediaUpload(e.dataTransfer.files[0]);
-    }
+  const autosize = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = '0px';
+    const next = Math.min(120, Math.max(44, el.scrollHeight));
+    el.style.height = `${next}px`;
   };
 
   const handleSubmit = async () => {
-    const hasPoll = showPoll && pollOptions.filter(o => o.trim()).length >= 2;
-    if ((!content.trim() && !imageUrl.trim() && !videoUrl.trim() && !hasPoll) || !profile || isSubmitting || isUploading) return;
-    
+    if (!profile?.uid) return;
+    const trimmed = content.trim();
+    if (!trimmed && !hasAttachment) return;
+    if (isSubmitting) return;
+
+    if (trimmed) {
+      const moderation = validateContent(trimmed, 'post');
+      if (moderation.status === 'block') return;
+    }
+
     setIsSubmitting(true);
-
-    // 🛡️ MODERATION LAYER (Part 4)
-    const modResult = validateContent(content, 'post');
-    if (modResult.status === 'block') {
-      alert('Seu conteúdo contém termos ou padrões não permitidos pela política da Aura.');
-      setIsSubmitting(false);
-      return;
-    }
-
-    // Gentle nudge: hashtags fuel "Assuntos do Momento" and discovery (no UI/layout changes)
-    if (typeof window !== 'undefined' && hashtags.length === 0 && content.trim() && !isBypassingNudge) {
-      try {
-        const storageKey = 'aura_hashtag_nudge_v1';
-        const alreadyNudged = window.localStorage.getItem(storageKey) === '1';
-        if (!alreadyNudged) {
-          setShowHashtagNudge(true);
-          setIsSubmitting(false);
-          return;
-        }
-      } catch {
-        // ignore storage failures
-      }
-    }
-
-    setIsBypassingNudge(false); // Reset bypass for next post
-
-    // OPTIMISTIC UX LAYER (Instant appearance)
-    // Use a real Firestore document id so interactions (likes/comments) never target a non-existent doc.
-    // Important: enqueue the Firestore write before exposing the post in the UI to avoid "No document to update".
-    const postRef = doc(collection(db, 'posts'));
-    const tempId = postRef.id;
-
-    const postRequiresApproval = !!(communityId && communitySecurity?.postRequiresApproval);
-    const approvalStatus: 'approved' | 'pending' =
-      communityId && postRequiresApproval && !isCommunityStaff ? 'pending' : 'approved';
-
-    const optimisticPost = {
-      id: tempId,
-      authorId: profile.uid,
-      authorName: profile.displayName || 'Anonymous',
-      authorPhoto: profile.photoURL || '',
-      authorUsername: profile.username || '',
-      authorVerified: profile.isVerified || false,
-      content: content.trim(),
-      hashtags,
-      imageUrl: imageUrl.trim() || null,
-      hasImage: !!imageUrl.trim(),
-      videoUrl: videoUrl.trim() || null,
-      hasVideo: !!videoUrl.trim() || !!youtubeVideo,
-      video: youtubeVideo ? {
-        provider: "youtube",
-        videoId: youtubeVideo.videoId,
-        watchUrl: youtubeVideo.watchUrl,
-        embedUrl: youtubeVideo.embedUrl,
-        status: "ready"
-      } : null,
-      hasPoll: hasPoll,
-      visibility: communityId ? 'public' : visibility,
-      communityId: communityId || null,
-      communityName: communityName || null,
-      approvalStatus,
-      approvedBy: null,
-      approvedAt: null,
-      likesCount: 0,
-      commentsCount: 0,
-      sharesCount: 0,
-      score: 0,
-      createdAt: Date.now(),
-      _isOptimistic: true,
-      mood: mood || null,
-      poll: hasPoll ? {
-        options: pollOptions.filter(o => o.trim()).map((text, i) => ({
-          id: `opt_${i}`,
-          text,
-          votes: 0
-        })),
-        expiresAt: Date.now() + (pollExpiration * 60 * 60 * 1000),
-        totalVotes: 0,
-        voters: []
-      } : null
-    };
-
-    // Remove local-only fields before sending to Firestore
-    const { id: _unusedId, _isOptimistic: _unusedOptimistic, ...postData } = optimisticPost;
-
-    // Enqueue the write immediately (do not await yet)
-    const writePromise = setDoc(postRef, {
-      ...postData,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      approvalStatus,
-      approvedBy: approvalStatus === 'approved' && isCommunityStaff ? profile.uid : null,
-      approvedAt: approvalStatus === 'approved' && isCommunityStaff ? serverTimestamp() : null,
-      moderation: {
-        status: modResult.status,
-        reasons: modResult.reasons,
-        score: modResult.score.total,
-        matchedRules: modResult.matchedRules
-      }
-    });
-
-    // Clear mood after submit
-    setMood(null);
-    setShowMoodPicker(false);
-
-    const shouldInjectIntoQueryKey = (queryKey: unknown) => {
-      if (!Array.isArray(queryKey) || queryKey.length < 1) return false;
-      if (queryKey[0] !== 'posts') return false;
-
-      // Expected key shape: ['posts', userId, communityId, type, feedMode, searchQuery]
-      const qUserId = queryKey[1];
-      const qCommunityId = queryKey[2];
-      const qType = queryKey[3];
-      const qSearchQuery = queryKey[5];
-
-      if (qType !== 'posts') return false;
-      if ((qSearchQuery || '').toString().trim() !== '') return false;
-
-      // Community post → only inject into that community feed
-      if (communityId) {
-        if (approvalStatus !== 'approved') return false;
-        return qCommunityId === communityId;
-      }
-
-      // Profile/user feed for me (and global feeds)
-      if (qUserId && qUserId !== profile.uid) return false;
-      return qCommunityId == null;
-    };
-
-    const upsertOptimisticPost = (old: any) => {
-      if (!old || !Array.isArray(old.pages)) return old;
-      const pages = old.pages.map((page: any, idx: number) => {
-        const docs = page?.docs;
-        if (!Array.isArray(docs)) return page;
-        if (idx !== 0) return page;
-        if (docs.some((d: any) => d?.id === tempId)) return page;
-        return { ...page, docs: [{ id: tempId, data: () => optimisticPost }, ...docs] };
-      });
-      return { ...old, pages };
-    };
-
-    // Update relevant feeds immediately
-    queryClient.setQueriesData(
-      { predicate: (q) => shouldInjectIntoQueryKey((q as any)?.queryKey) },
-      upsertOptimisticPost
-    );
-
-    // 🚀 PRIORITY 7: IMMUTABLE FAST EXPERIENCE
-    // Clear UI inputs immediately so user feels the post was "sent" instantly
-    const savedContent = content; // Keep reference in case of error
-    setContent('');
-    setImageUrl('');
-    setImageMetadata(null);
-    setVideoUrl('');
-    setVideoMetadata(null);
-    setYoutubeVideo(null);
-    setShowImageInput(false);
-    setShowPoll(false);
-    setPollOptions(['', '']);
-    soundEffects.play('success');
-
-    if (communityId && approvalStatus === 'pending') {
-      alert(t('create_post.pending_approval', 'Seu post foi enviado e est\u00e1 aguardando aprova\u00e7\u00e3o do administrador.'));
-    }
-
     try {
-      // Wait for the write to be acknowledged in the background
-      await writePromise;
-      
-      // Mark as non-optimistic in cache (id is already the real Firestore id)
-      queryClient.setQueriesData(
-        { predicate: (q) => shouldInjectIntoQueryKey((q as any)?.queryKey) },
-        (old: any) => {
-          if (!old || !Array.isArray(old.pages)) return old;
-          const pages = old.pages.map((page: any) => {
-            const docs = page?.docs;
-            if (!Array.isArray(docs)) return page;
-            return {
-              ...page,
-              docs: docs.map((d: any) =>
-                d?.id === tempId
-                  ? {
-                      id: tempId,
-                      data: () => ({
-                        ...optimisticPost,
-                        id: tempId,
-                        _isOptimistic: false,
-                        createdAt: { seconds: Math.floor(Date.now() / 1000), nanoseconds: 0 },
-                      }),
-                    }
-                  : d
-              ),
-            };
-          });
-          return { ...old, pages };
-        }
-      );
-      
-      // Sync finalize
-      queryClient.invalidateQueries({ queryKey: ['posts'] });
+      let imageUrl: string | null = null;
 
-      // BROADCAST SYNC (Part 6)
-      if (typeof window !== 'undefined') {
-        const syncChannel = new BroadcastChannel('aura_feed_sync');
-        syncChannel.postMessage({ type: 'invalidate_posts' });
-        syncChannel.close();
+      if (imageFile) {
+        setIsUploadingImage(true);
+        try {
+          const result = await uploadImage(imageFile);
+          imageUrl = result.url;
+        } finally {
+          setIsUploadingImage(false);
+        }
+      } else if (gifUrl) {
+        imageUrl = gifUrl;
       }
-    } catch (error) {
-      // Revert cache on fail
+
+      const validPollOptions = pollOptions.filter((o) => o.trim());
+      const poll = showPoll && validPollOptions.length >= 2
+        ? { options: validPollOptions.map((text) => ({ text, votes: 0 })), totalVotes: 0 }
+        : null;
+
+      await addDoc(collection(db, 'posts'), {
+        authorId: profile.uid,
+        authorName: profile.displayName || 'User',
+        authorUsername: profile.username || '',
+        authorPhoto: profile.photoURL || '',
+        content: trimmed || '',
+        hashtags,
+        communityId: communityId || null,
+        communityName: communityName || null,
+        communitySecurity: communitySecurity ?? null,
+        isCommunityStaff: isCommunityStaff ?? false,
+        visibility: 'public',
+        likesCount: 0,
+        commentsCount: 0,
+        sharesCount: 0,
+        imageUrl,
+        poll,
+        createdAt: serverTimestamp(),
+      });
+
+      setContent('');
+      setMentionSearch(null);
+      setHashtagSearch(null);
+      setImageFile(null);
+      setImagePreview(null);
+      setGifUrl(null);
+      setGifPreviewUrl(null);
+      setShowPoll(false);
+      setPollOptions(['', '']);
       queryClient.invalidateQueries({ queryKey: ['posts'] });
-      handleFirestoreError(error, OperationType.CREATE, 'posts');
+    } catch (e) {
+      console.error('CreatePost error:', e);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div 
-      className={`relative bg-white rounded-[2rem] shadow-sm p-4 mb-6 border transition-all duration-300 ${isDragging ? 'border-primary bg-primary/5 scale-[1.01]' : 'border-slate-100/60'}`}
-      onDragOver={onDragOver}
-      onDragLeave={onDragLeave}
-      onDrop={onDrop}
-    >
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*,video/*"
-        className="hidden"
-        onChange={(e) => {
-          const file = e.target.files?.[0] || null;
-          // Reset input so selecting the same file again still triggers onChange
-          e.target.value = '';
-          if (!file) return;
-          // Vídeos também são suportados (upload via Firebase Storage).
-          setShowImageInput(true);
-          void handleMediaUpload(file);
-        }}
-      />
-      {/* Top row: avatar + input */}
-      <div className="flex items-start gap-3 mb-4">
-        <div className="w-10 h-10 rounded-full bg-slate-100 overflow-hidden shrink-0 shadow-sm border border-slate-200/50">
+    <div className="aura-panel p-4 mb-6">
+      <div className="flex items-start gap-4">
+        <div className="w-[42px] h-[42px] rounded-full overflow-hidden shrink-0">
           {profile?.photoURL ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img src={profile.photoURL} alt="" className="w-full h-full object-cover" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-primary/40 font-bold text-base bg-gradient-to-br from-slate-50 to-slate-200">
+            <div className="w-full h-full flex items-center justify-center bg-muted text-slate-500 font-bold">
               {profile?.displayName?.charAt(0).toUpperCase() || 'U'}
             </div>
           )}
         </div>
-        <div className="flex-1 bg-slate-50 rounded-3xl px-4 py-3 hover:bg-slate-100/80 transition-all cursor-text relative border border-slate-100/50">
-          <textarea 
-            ref={textareaRef}
-            value={content}
-            onChange={handleTextChange}
-            placeholder={communityId ? `O que você está pensando para ${communityName}?` : profile?.displayName ? `No que você está pensando, ${profile.displayName.split(' ')[0]}?` : 'O que você está pensando?'}
-            className="bg-transparent w-full focus:outline-none text-[14px] text-slate-700 placeholder:text-slate-400/80 font-medium resize-none leading-relaxed"
-            rows={content ? Math.max(2, content.split('\n').length) : 1}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                if (mentionSearch || hashtagSearch) return; 
-                e.preventDefault();
-                handleSubmit();
-              }
-              if (e.key === 'Escape') {
-                setMentionSearch(null);
-                setHashtagSearch(null);
-              }
-            }}
-          />
-          {mentionSearch && (
-            <MentionSuggestions 
-              searchText={mentionSearch.text} 
-              onSelect={handleSelectMention} 
-              onClose={() => setMentionSearch(null)} 
-            />
-          )}
-          {hashtagSearch && (
-            <HashtagSuggestions
-              searchText={hashtagSearch.text}
-              suggestions={hashtagSuggestions}
-              onSelect={handleSelectHashtag}
-              onClose={() => setHashtagSearch(null)}
-            />
-          )}
-        </div>
-      </div>
 
-      {/* Formatting Toolbar */}
-      {content.length > 0 && (
-        <div className="flex items-center gap-1 mb-2 pl-12">
-          <button
-            type="button"
-            title="Negrito"
-            onClick={() => insertFormat('**')}
-            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-all"
-          >
-            <Bold className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            title="Itálico"
-            onClick={() => insertFormat('*')}
-            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-all"
-          >
-            <Italic className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            title="Citação"
-            onClick={() => insertLineFormat('> ')}
-            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-all"
-          >
-            <Quote className="w-3.5 h-3.5" />
-          </button>
-          {mood && (
-            <span className="ml-2 px-2 py-0.5 bg-primary/5 border border-primary/10 rounded-full text-[11px] font-bold text-primary flex items-center gap-1">
-              {MOODS.find(m => m.id === mood)?.emoji} {MOODS.find(m => m.id === mood)?.label}
-              <button type="button" onClick={() => setMood(null)} className="ml-1 hover:text-rose-500 transition-colors">
-                <X className="w-3 h-3" />
-              </button>
-            </span>
-          )}
-        </div>
-      )}
+        <div className="flex-1">
+          <div className="rounded-2xl border border-border bg-secondary p-3.5 flex flex-col gap-3 shadow-sm transition-all duration-200">
+            {/* 1. Input */}
+            <div className="relative w-full flex items-start">
+              <textarea
+                ref={textareaRef}
+                id="create-post-textarea"
+                value={content}
+                onChange={(e) => {
+                  handleTextChange(e);
+                  autosize();
+                }}
+                onFocus={() => autosize()}
+                placeholder={`No que você está pensando, ${profile?.displayName?.split(' ')[0] || ''}?`}
+                className="w-full min-h-[40px] max-h-[120px] resize-none overflow-hidden bg-transparent text-[14px] font-semibold text-slate-700 placeholder:text-slate-400 outline-none leading-[24px] m-0 p-1"
+                style={{ height: '40px' }}
+                onKeyDown={(e) => {
+                  const key = e.key.toLowerCase();
+                  const mod = e.metaKey || e.ctrlKey;
+                  if (key === 'escape') {
+                    setMentionSearch(null);
+                    setHashtagSearch(null);
+                    return;
+                  }
+                  if (key === 'enter' && !e.shiftKey) {
+                    if (mod) {
+                      e.preventDefault();
+                      if (canPost) void handleSubmit();
+                      return;
+                    }
+                  }
+                }}
+              />
 
-      {/* Mood Picker */}
-      {showMoodPicker && (
-        <div className="mb-3 pl-12">
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-md p-3">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">Como você está se sentindo?</p>
-            <div className="flex flex-wrap gap-2">
-              {MOODS.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => { setMood(m.id); setShowMoodPicker(false); }}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-bold transition-all hover:scale-105 active:scale-95 border ${
-                    mood === m.id
-                      ? 'bg-primary text-white border-primary shadow-sm'
-                      : 'bg-slate-50 text-slate-600 border-slate-100 hover:bg-primary/5 hover:border-primary/20'
-                  }`}
-                >
-                  <span>{m.emoji}</span>
-                  <span>{m.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Live Markdown Preview */}
-      {hasMarkdown && (
-        <div className="mb-3 pl-12">
-          <div className="rounded-2xl bg-slate-50 border border-slate-100 px-4 py-3">
-            <p className="text-[9px] font-black uppercase tracking-wider text-slate-400 mb-2">Pré-visualização</p>
-            <div className="text-[14px] text-slate-800 leading-relaxed">
-              {renderTextWithLinks(content)}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Media feedback (keeps layout/style consistent; only shows when uploading/selected) */}
-      {isUploading && (
-        <div className="flex items-center gap-2 mb-3 pl-12 text-slate-500 text-sm font-medium">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          {uploadKind === 'video' ? 'Enviando vídeo...' : 'Enviando foto...'}
-        </div>
-      )}
-      {(imageUrl || videoUrl) && !isUploading && (
-        <div className="mb-3 pl-12">
-          <div className="relative rounded-2xl overflow-hidden border border-slate-100 shadow-sm bg-white">
-            {videoUrl ? (
-              <video src={videoUrl} controls playsInline className="w-full max-h-[360px] object-cover" />
-            ) : (
-              <img src={imageUrl} alt="" className="w-full max-h-[360px] object-cover" />
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                setImageUrl('');
-                setImageMetadata(null);
-                setVideoUrl('');
-                setVideoMetadata(null);
-                setShowImageInput(false);
-              }}
-              className="absolute top-2 right-2 w-9 h-9 rounded-full bg-white/90 hover:bg-white shadow-md flex items-center justify-center text-slate-700 transition-colors"
-              title="Remover foto"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Poll Builder */}
-      {showPoll && (
-        <div className="mb-4 pl-12">
-          <div className="bg-slate-50/50 rounded-2xl p-4 border border-slate-100">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[12px] font-bold text-slate-600 uppercase tracking-wider">Criar Enquete</span>
-              <button 
-                onClick={() => setShowPoll(false)}
-                className="text-slate-400 hover:text-rose-500 transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="space-y-2">
-              {pollOptions.map((option, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <input 
-                    type="text"
-                    value={option}
-                    onChange={(e) => {
-                      const newOptions = [...pollOptions];
-                      newOptions[i] = e.target.value;
-                      setPollOptions(newOptions);
-                    }}
-                    placeholder={`Opção ${i + 1}`}
-                    className="flex-1 bg-white border border-slate-100 rounded-xl px-4 py-2.5 text-[14px] focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all font-medium"
+              {mentionSearch?.text ? (
+                <div className="absolute left-0 top-full pt-2 z-10">
+                  <MentionSuggestions
+                    searchText={mentionSearch.text}
+                    onSelect={handleSelectMention}
+                    onClose={() => setMentionSearch(null)}
                   />
-                  {pollOptions.length > 2 && (
-                    <button 
-                      onClick={() => setPollOptions(pollOptions.filter((_, idx) => idx !== i))}
-                      className="p-2 text-slate-400 hover:text-rose-500 hover:bg-white rounded-lg transition-all"
-                    >
-                      <Minus size={16} />
-                    </button>
-                  )}
                 </div>
-              ))}
-              {pollOptions.length < 5 && (
-                <button 
-                  onClick={() => setPollOptions([...pollOptions, ''])}
-                  className="flex items-center gap-2 text-primary hover:text-primary/80 text-[13px] font-bold px-4 py-2 rounded-xl hover:bg-white transition-all w-full justify-center border border-dashed border-primary/20 mt-2"
-                >
-                  <Plus size={16} />
-                  <span>Adicionar opção</span>
-                </button>
-              )}
+              ) : null}
+
+              {hashtagSearch?.text ? (
+                <div className="absolute left-0 top-full pt-2 z-10">
+                  <HashtagSuggestions
+                    searchText={hashtagSearch.text}
+                    suggestions={[
+                      ...DEFAULT_TAG_SUGGESTIONS,
+                      ...hashtags.map((h) => String(h || '').replace(/^#/, '')),
+                    ]}
+                    onSelect={handleSelectHashtag}
+                    onClose={() => setHashtagSearch(null)}
+                  />
+                </div>
+              ) : null}
             </div>
-            <div className="mt-4 flex items-center gap-4 text-[12px] font-bold text-slate-500 border-t border-slate-100 pt-3">
-              <span>Duração:</span>
-              <select 
-                value={pollExpiration} 
-                onChange={(e) => setPollExpiration(Number(e.target.value))}
-                className="bg-transparent focus:outline-none text-primary cursor-pointer"
+
+            {/* 2. Attachment Preview (Integrated) */}
+            {(imagePreview || gifPreviewUrl) && (
+              <div className="relative w-full rounded-xl overflow-hidden group animate-in fade-in duration-300 border border-black/5">
+                <img
+                  src={imagePreview || gifPreviewUrl || ''}
+                  alt="Preview"
+                  className="w-full object-cover max-h-[360px]"
+                />
+                <button
+                  type="button"
+                  onClick={imagePreview ? removeImage : removeGif}
+                  className="absolute top-3 right-3 w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center hover:scale-105 active:scale-95 transition-all duration-200 shadow-md"
+                  title="Remover anexo"
+                >
+                  <X size={14} strokeWidth={2.5} />
+                </button>
+                {isUploadingImage && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+                    <div className="w-6 h-6 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 3. Poll Editor (Integrated) */}
+            {showPoll && (
+              <PollEditor
+                options={pollOptions}
+                onChange={handlePollOptionChange}
+                onRemove={() => { setShowPoll(false); setPollOptions(['', '']); }}
+              />
+            )}
+
+            {/* 4. Ações (Toolbar + Publicar) */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-200/50">
+              <div ref={toolbarRef} className="flex items-center gap-1 px-1 relative">
+                {/* Image */}
+                <button
+                  type="button"
+                  onClick={handleImageClick}
+                  className={`w-8 h-8 flex items-center justify-center transition-all rounded-full hover:bg-slate-100 ${imagePreview ? 'text-primary bg-primary/10' : 'text-slate-400 hover:text-primary'}`}
+                  aria-label="Imagem"
+                  title="Adicionar imagem"
+                >
+                  <ImageIcon size={18} />
+                </button>
+
+                {/* GIF */}
+                <button
+                  type="button"
+                  onClick={() => { setShowGif((v) => !v); setShowEmoji(false); }}
+                  className={`h-6 px-2 border-[1.5px] rounded text-[10px] font-black transition-all ${showGif || gifUrl ? 'border-primary text-primary bg-primary/5' : 'border-slate-200 text-slate-400 hover:text-primary hover:border-primary'}`}
+                  title="Adicionar GIF"
+                >
+                  GIF
+                </button>
+
+                {/* Poll */}
+                <button
+                  type="button"
+                  onClick={() => setShowPoll((v) => !v)}
+                  className={`w-8 h-8 flex items-center justify-center transition-all rounded-full hover:bg-slate-100 ${showPoll ? 'text-primary bg-primary/10' : 'text-slate-400 hover:text-primary'}`}
+                  aria-label="Enquete"
+                  title="Criar enquete"
+                >
+                  <BarChart3 size={17} />
+                </button>
+
+                {/* Emoji */}
+                <button
+                  type="button"
+                  onClick={() => { setShowEmoji((v) => !v); setShowGif(false); }}
+                  className={`w-8 h-8 flex items-center justify-center transition-all rounded-full hover:bg-slate-100 ${showEmoji ? 'text-primary bg-primary/10' : 'text-slate-400 hover:text-primary'}`}
+                  aria-label="Emoji"
+                  title="Adicionar emoji"
+                >
+                  <Smile size={18} />
+                </button>
+
+                {/* Emoji Picker Popover */}
+                {showEmoji && (
+                  <EmojiPicker
+                    onSelect={handleEmojiSelect}
+                    onClose={() => setShowEmoji(false)}
+                  />
+                )}
+
+                {/* GIF Picker Popover */}
+                {showGif && (
+                  <GifPicker
+                    onSelect={handleGifSelect}
+                    onClose={() => setShowGif(false)}
+                  />
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void handleSubmit()}
+                className="aura-btn-primary h-[36px] px-6 rounded-2xl text-[13px]"
+                disabled={!canPost}
               >
-                <option value={1}>1 hora</option>
-                <option value={24}>24 horas</option>
-                <option value={72}>3 dias</option>
-                <option value={168}>7 dias</option>
-              </select>
+                {isSubmitting ? (isUploadingImage ? 'Enviando…' : 'Publicando…') : 'Publicar'}
+              </button>
             </div>
           </div>
         </div>
-      )}
-
-      {/* Hashtag tags */}
-      {hashtags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-3 pl-12">
-          {hashtags.map((tag) => (
-            <span key={tag} className="px-3 py-1 rounded-full bg-primary/5 text-primary text-[11px] font-black uppercase tracking-wider border border-primary/10">
-              #{tag.replace('#', '')}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Action row */}
-      <div className="flex items-center justify-between pt-3 border-t border-slate-50/80">
-        <div className="flex items-center gap-1">
-          <button 
-            type="button"
-            onClick={() => {
-              setShowImageInput(true);
-              fileInputRef.current?.click();
-            }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold transition-all duration-300 hover:scale-105 active:scale-95 ${showImageInput || imageUrl || videoUrl ? 'text-primary bg-primary/10 shadow-sm shadow-primary/5' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
-          >
-            <ImageIcon className="w-4 h-4" />
-            <span className="hidden sm:inline">Foto/Vídeo</span>
-          </button>
-
-          <button type="button" className="flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-50 transition-all duration-300 hover:scale-105 active:scale-95">
-            <Video className="w-4 h-4" />
-            <span className="hidden sm:inline">Ao Vivo</span>
-          </button>
-
-          <button 
-            type="button" 
-            onClick={() => setShowPoll(!showPoll)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold transition-all duration-300 hover:scale-105 active:scale-95 ${showPoll ? 'text-primary bg-primary/10' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
-          >
-            <BarChart2 className="w-4 h-4" />
-            <span className="hidden sm:inline">Enquete</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowMoodPicker(!showMoodPicker)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-[12px] font-bold transition-all duration-300 hover:scale-105 active:scale-95 ${
-              mood ? 'text-primary bg-primary/10' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-            }`}
-          >
-            <Smile className="w-4 h-4" />
-            <span className="hidden sm:inline">{mood ? MOODS.find(m => m.id === mood)?.emoji : 'Humor'}</span>
-          </button>
-        </div>
-
-        <button 
-          onClick={handleSubmit} 
-          disabled={(!content.trim() && !imageUrl.trim() && !videoUrl.trim()) || isSubmitting || isUploading} 
-          className="bg-primary text-white px-6 py-2 rounded-full font-black text-[12px] uppercase tracking-widest transition-all duration-300 disabled:opacity-30 disabled:cursor-not-allowed active:scale-90 shadow-lg shadow-primary/20 hover:shadow-primary/40 hover:-translate-y-0.5"
-        >
-          {isSubmitting ? 'Publicando...' : 'Publicar'}
-        </button>
       </div>
 
-      {/* Drag overlay */}
-      {isDragging && (
-        <div className="absolute inset-0 z-10 bg-primary/10 backdrop-blur-[2px] rounded-2xl flex items-center justify-center pointer-events-none border-2 border-dashed border-primary animate-in fade-in duration-200">
-          <div className="bg-white p-5 rounded-2xl shadow-lg flex flex-col items-center gap-2">
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-              <Upload className="w-6 h-6 animate-bounce" />
-            </div>
-            <p className="text-base font-semibold text-slate-700">Drop to upload</p>
-          </div>
-        </div>
-      )}
-
-      <ActionModal
-        isOpen={showHashtagNudge}
-        onClose={() => setShowHashtagNudge(false)}
-        onConfirm={() => {
-          try {
-            window.localStorage.setItem('aura_hashtag_nudge_v1', '1');
-          } catch {}
-          setIsBypassingNudge(true);
-          setTimeout(() => handleSubmit(), 0);
-        }}
-        title="Dica de Engajamento"
-        message="Sabia que adicionar 1–3 #hashtags ajuda seu post a entrar em 'Assuntos do Momento' e ser descoberto por mais pessoas?"
-        confirmLabel="Publicar mesmo assim"
-        cancelLabel="Vou adicionar hashtags"
-        variant="info"
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,image/gif"
+        className="hidden"
+        onChange={handleFileChange}
       />
     </div>
   );

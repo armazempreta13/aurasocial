@@ -31,7 +31,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         directMessages: true,
         activityStatus: true,
       },
-      onboardingCompleted: true,
+      onboardingCompleted: false,
+
       relationshipSettings: {
         whoCanSendFriendRequest: 'everyone',
         whoCanSeeFriendList: 'everyone',
@@ -97,13 +98,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             return;
           }
           
-          if (!profileData.username) {
-            const baseName = profileData.displayName || firebaseUser.email?.split('@')[0] || 'user';
-            profileData.username = baseName.toLowerCase().replace(/[^a-z0-9]/g, '') + Math.floor(Math.random() * 1000);
-            await updateDoc(userRef, { username: profileData.username }).catch(() => {});
+          // 🔄 FORÇAR COMPLEMENTAÇÃO DE DADOS (GOOGLE LOGIN OU ANTIGO)
+          const isDataIncomplete = !profileData.username || !profileData.birthDate || !profileData.contactVerified;
+          
+          if (isDataIncomplete && profileData.onboardingCompleted !== false) {
+            profileData.onboardingCompleted = false;
+            await updateDoc(userRef, { onboardingCompleted: false }).catch(() => {});
           }
 
-          setProfile({ ...fbProfile, ...profileData, onboardingCompleted: true } as any);
+          setProfile({ ...fbProfile, ...profileData } as any);
+
+
           setAuthReady(true);
         } else {
           // New User Case

@@ -1,255 +1,272 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import {
   Bell, Heart, MessageCircle, Share2, UserCheck, UserPlus,
-  AtSign, Users, Sparkles, Reply, Check, Trash2, CheckCheck, X, MoreHorizontal, BadgeCheck
+  AtSign, Users, Sparkles, Reply, Check, X, MoreHorizontal,
+  CheckCheck, Trash2, BadgeCheck, Star, Tag,
 } from 'lucide-react';
-import { useAppStore } from '@/lib/store';
-import {
-  Notification, NotificationType, NotificationColor,
-  subscribeToNotifications, markNotificationRead, markAllNotificationsRead,
-  deleteNotification, getNotificationLink, getNotificationColor,
-} from '@/lib/notifications';
-import { soundEffects } from '@/lib/sound-effects';
-import { respondToFriendRequest, getRelationshipSnapshot, RelationshipStatus } from '@/lib/friendships';
 import Link from 'next/link';
-import { TimeAgo } from './TimeAgo';
-import { useTranslation } from 'react-i18next';
 import { useRouter } from 'next/navigation';
-import { renderTextWithLinks } from '@/lib/mentions';
 import { motion, AnimatePresence } from 'motion/react';
+import { useAppStore } from '@/lib/store';
+import { soundEffects } from '@/lib/sound-effects';
+import { respondToFriendRequest } from '@/lib/friendships';
+import { TimeAgo } from './TimeAgo';
+import {
+  useNotifications,
+  getNotificationColor,
+  getNotificationLink,
+  buildNotificationText,
+  deleteNotification,
+  type GroupedNotification,
+  type NotificationType,
+  type NotificationColor,
+} from '@/lib/notifications';
+
+// ─── Cross-TopNav event ───────────────────────────────────────────────────────
 
 const DROPDOWN_EVENT = 'topnav:dropdown-open';
 
-function emitDropdownOpen(name: 'messages' | 'notifications') {
+function emitDropdownOpen(name: string) {
   window.dispatchEvent(new CustomEvent(DROPDOWN_EVENT, { detail: { name } }));
 }
 
-// ─── Icon map ─────────────────────────────────────────────────────────────────
+// ─── Colour map ───────────────────────────────────────────────────────────────
 
-const COLOR_CLASSES: Record<NotificationColor, { icon: string; bg: string; dot: string }> = {
-  red:     { icon: 'text-red-500',     bg: 'bg-red-50',      dot: 'bg-red-500' },
-  blue:    { icon: 'text-blue-500',    bg: 'bg-blue-50',     dot: 'bg-blue-500' },
-  sky:     { icon: 'text-sky-500',     bg: 'bg-sky-50',      dot: 'bg-sky-500' },
-  green:   { icon: 'text-green-500',   bg: 'bg-green-50',    dot: 'bg-green-500' },
-  violet:  { icon: 'text-violet-600',  bg: 'bg-violet-50',   dot: 'bg-violet-500' },
-  emerald: { icon: 'text-emerald-600', bg: 'bg-emerald-50',  dot: 'bg-emerald-500' },
-  amber:   { icon: 'text-amber-500',   bg: 'bg-amber-50',    dot: 'bg-amber-500' },
-  primary: { icon: 'text-primary',     bg: 'bg-primary/10',  dot: 'bg-primary' },
+const COLOR_CLASSES: Record<NotificationColor, { icon: string; bg: string; dot: string; ring: string }> = {
+  red:     { icon: 'text-red-500',     bg: 'bg-red-50',      dot: 'bg-red-500',    ring: 'ring-red-100' },
+  blue:    { icon: 'text-blue-500',    bg: 'bg-blue-50',     dot: 'bg-blue-500',   ring: 'ring-blue-100' },
+  sky:     { icon: 'text-sky-500',     bg: 'bg-sky-50',      dot: 'bg-sky-500',    ring: 'ring-sky-100' },
+  green:   { icon: 'text-green-500',   bg: 'bg-green-50',    dot: 'bg-green-500',  ring: 'ring-green-100' },
+  violet:  { icon: 'text-violet-600',  bg: 'bg-violet-50',   dot: 'bg-violet-500', ring: 'ring-violet-100' },
+  emerald: { icon: 'text-emerald-600', bg: 'bg-emerald-50',  dot: 'bg-emerald-500',ring: 'ring-emerald-100' },
+  amber:   { icon: 'text-amber-500',   bg: 'bg-amber-50',    dot: 'bg-amber-500',  ring: 'ring-amber-100' },
+  rose:    { icon: 'text-rose-500',    bg: 'bg-rose-50',     dot: 'bg-rose-500',   ring: 'ring-rose-100' },
+  orange:  { icon: 'text-orange-500',  bg: 'bg-orange-50',   dot: 'bg-orange-500', ring: 'ring-orange-100' },
+  primary: { icon: 'text-primary',     bg: 'bg-primary/10',  dot: 'bg-primary',    ring: 'ring-primary/20' },
 };
 
-function NotifIcon({ type, size = 14 }: { type: NotificationType; size?: number }) {
+// ─── Type icon ────────────────────────────────────────────────────────────────
+
+function NotifTypeIcon({ type, size = 12 }: { type: NotificationType; size?: number }) {
   const color = getNotificationColor(type);
   const cls = `${COLOR_CLASSES[color].icon}`;
-  const props = { size, className: cls };
+  const p = { size, className: cls };
   switch (type) {
-    case 'like': return <Heart {...props} fill="currentColor" />;
-    case 'comment': return <MessageCircle {...props} fill="currentColor" />;
-    case 'reply': return <Reply {...props} />;
-    case 'follow': return <UserPlus {...props} />;
-    case 'friend_request': return <UserPlus {...props} />;
-    case 'friend_accept': return <UserCheck {...props} />;
-    case 'share': return <Share2 {...props} />;
-    case 'mention': return <AtSign {...props} />;
+    case 'like':             return <Heart {...p} fill="currentColor" />;
+    case 'comment':          return <MessageCircle {...p} fill="currentColor" />;
+    case 'reply':            return <Reply {...p} />;
+    case 'follow':           return <UserPlus {...p} />;
+    case 'friend_request':   return <UserPlus {...p} />;
+    case 'friend_accept':    return <UserCheck {...p} />;
+    case 'share':            return <Share2 {...p} />;
+    case 'mention':          return <AtSign {...p} />;
     case 'community_invite':
-    case 'community_post': return <Users {...props} />;
-    default: return <Sparkles {...props} />;
+    case 'community_post':
+    case 'community_accept': return <Users {...p} />;
+    case 'story_reaction':   return <Star {...p} fill="currentColor" />;
+    case 'story_reply':      return <Reply {...p} />;
+    case 'post_tag':         return <Tag {...p} />;
+    case 'poll_vote':        return <Check {...p} />;
+    case 'system':           return <Sparkles {...p} />;
+    default:                 return <Sparkles {...p} />;
   }
 }
 
-// ─── Single notification row ───────────────────────────────────────────────────
+// ─── Actor avatars stack ──────────────────────────────────────────────────────
 
-function NotifRow({
-  n,
-  compact = false,
-  onRead,
+function ActorAvatars({ group }: { group: GroupedNotification }) {
+  const color = getNotificationColor(group.type);
+  const cls = COLOR_CLASSES[color];
+
+  const preview = group.actors.slice(0, 3);
+  const extra = group.actorCount - preview.length;
+
+  return (
+    <div className="relative shrink-0">
+      {/* Stacked avatars (max 2 shown + overflow badge) */}
+      <div className="flex">
+        {preview.slice(0, 2).map((actor, i) => (
+          <div
+            key={actor.uid}
+            className={`relative w-11 h-11 rounded-full ring-2 ring-white overflow-hidden bg-slate-100 shadow-sm transition-all duration-300 group-hover:shadow-md ${i > 0 ? '-ml-4' : ''}`}
+          >
+            {actor.photoURL ? (
+              <img src={actor.photoURL} alt={actor.displayName} loading="lazy" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center font-bold text-slate-400 text-base">
+                {actor.displayName?.charAt(0).toUpperCase() || 'U'}
+              </div>
+            )}
+          </div>
+        ))}
+        {extra > 0 && (
+          <div className="-ml-4 w-11 h-11 rounded-full ring-2 ring-white bg-slate-200 flex items-center justify-center text-[10px] font-black text-slate-600 shadow-sm">
+            +{extra}
+          </div>
+        )}
+      </div>
+      {/* Type badge */}
+      <div className={`absolute -bottom-0.5 -right-0.5 w-[22px] h-[22px] rounded-full ${cls.bg} flex items-center justify-center shadow-md border-2 border-white transition-transform group-hover:scale-110 duration-300`}>
+        <NotifTypeIcon type={group.type} size={10} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Grouped notification row ─────────────────────────────────────────────────
+
+function GroupRow({
+  group,
+  onGroupRead,
   onDelete,
   onClose,
 }: {
-  n: Notification;
-  compact?: boolean;
-  onRead: (id: string) => void;
-  onDelete: (id: string) => void;
+  group: GroupedNotification;
+  onGroupRead: (rawIds: string[]) => void;
+  onDelete: (rawIds: string[]) => void;
   onClose: () => void;
 }) {
-  const { t } = useTranslation('common');
   const { profile } = useAppStore();
   const router = useRouter();
-  const [friendActionDone, setFriendActionDone] = useState<'accepted' | 'declined' | null>(null);
-  const [isBusy, setIsBusy] = useState(false);
-  const [currentStatus, setCurrentStatus] = useState<RelationshipStatus | null>(null);
-  const color = getNotificationColor(n.type);
-  const colorCls = COLOR_CLASSES[color];
-  const isFriendRequest = n.type === 'friend_request';
-
-  useEffect(() => {
-    let isMounted = true;
-    if (isFriendRequest && !friendActionDone && profile?.uid) {
-      getRelationshipSnapshot(profile.uid, n.actorId).then(snap => {
-        if (isMounted && (snap.status === 'friends' || snap.status === 'muted')) {
-          setFriendActionDone('accepted');
-          // Auto-delete after 5 seconds if already accepted elsewhere
-          setTimeout(() => {
-            if (isMounted) deleteNotification(n.id).catch(() => {});
-          }, 5000);
-        }
-        if (isMounted) setCurrentStatus(snap.status);
-      });
-    }
-    return () => { isMounted = false; };
-  }, [isFriendRequest, friendActionDone, profile?.uid, n.actorId, n.id]);
-
-  const getMessage = () => {
-    switch (n.type) {
-      case 'like': return t('notifications.reacted_to_post', 'reacted to your post.');
-      case 'comment': return t('notifications.commented_on_post', 'commented on your post.');
-      case 'reply': return t('notifications.replied_to_comment', 'replied to your comment.');
-      case 'follow': return t('notifications.started_following_you', 'started following you.');
-      case 'friend_request': return t('notifications.sent_friend_request', 'sent you a friend request.');
-      case 'friend_accept': return t('notifications.accepted_friend_request', 'accepted your friend request.');
-      case 'share': return t('notifications.shared_post', 'shared your post.');
-      case 'mention': return t('notifications.mentioned_you', 'mentioned you in a post.');
-      case 'community_invite': return `${t('notifications.invited_you_to', 'invited you to')} ${n.communityName || 'a community'}.`;
-      case 'community_post': return `${t('notifications.posted_in', 'posted in')} ${n.communityName || 'your community'}.`;
-      default: return t('notifications.generic', 'sent you a notification.');
-    }
-  };
+  const color = getNotificationColor(group.type);
+  const cls = COLOR_CLASSES[color];
+  const text = buildNotificationText(group);
+  const isFriendRequest = group.type === 'friend_request';
+  const [friendDone, setFriendDone] = useState<'accepted' | 'declined' | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const handleClick = () => {
-    if (!n.read) onRead(n.id);
-    router.push(getNotificationLink(n));
+    if (!group.read) onGroupRead(group.rawIds);
+    router.push(getNotificationLink(group));
     onClose();
   };
 
   const handleFriendAction = async (action: 'accept' | 'decline') => {
-    if (!profile || isBusy) return;
-    setIsBusy(true);
+    if (!profile || busy) return;
+    setBusy(true);
     try {
-      await respondToFriendRequest({
-        requestOwnerUid: n.actorId,
-        actorUser: profile,
-        action,
-      });
-      
-      setFriendActionDone(action === 'accept' ? 'accepted' : 'declined');
-      onRead(n.id);
-      
-      // Delay deletion so user sees the "Accepted/Declined" state for a moment
+      const actorId = group.actors[0]?.uid;
+      if (!actorId) return;
+      await respondToFriendRequest({ requestOwnerUid: actorId, actorUser: profile, action });
+      setFriendDone(action === 'accept' ? 'accepted' : 'declined');
+      onGroupRead(group.rawIds);
       setTimeout(() => {
-        deleteNotification(n.id).catch(console.error);
-      }, 2000);
+        group.rawIds.forEach((id) => deleteNotification(id).catch(() => {}));
+      }, 2500);
     } catch (e) {
-      console.error('Friend action error:', e);
+      console.error(e);
     } finally {
-      setIsBusy(false);
+      setBusy(false);
     }
   };
 
   return (
     <motion.div
       layout
-      initial={{ opacity: 0, y: 10 }}
+      initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
-      className={`group relative flex gap-3 px-4 py-4 transition-all duration-300 hover:bg-slate-50/80 ${!n.read ? 'bg-primary/[0.02]' : ''}`}
+      exit={{ opacity: 0, scale: 0.96, height: 0 }}
+      transition={{ duration: 0.18, ease: 'easeOut' }}
+      className={`group relative flex gap-3 px-4 py-3.5 transition-all duration-200 hover:bg-slate-50/80 cursor-pointer ${!group.read ? 'bg-primary/[0.025]' : ''}`}
     >
-      {!n.read && (
-        <span className={`absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-10 rounded-r-full ${colorCls.dot} shadow-[0_0_8px_rgba(0,0,0,0.1)]`} />
+      {/* Unread indicator bar */}
+      {!group.read && (
+        <span className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-10 rounded-r-full ${cls.dot}`} />
       )}
 
-      <button onClick={handleClick} className="relative shrink-0 mt-0.5">
-        <div className="w-12 h-12 rounded-full bg-slate-100 overflow-hidden ring-4 ring-white shadow-sm group-hover:shadow-md transition-all duration-300">
-          {n.actorPhoto ? (
-            <img src={n.actorPhoto} alt={n.actorName} loading="lazy" className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center font-bold text-slate-400 text-lg">
-              {n.actorName?.charAt(0).toUpperCase() || 'U'}
-            </div>
-          )}
-        </div>
-        <div className={`absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full ${colorCls.bg} flex items-center justify-center shadow-md border-2 border-white transition-transform group-hover:scale-110 duration-300`}>
-          <NotifIcon type={n.type} size={11} />
-        </div>
+      {/* Avatars */}
+      <button onClick={handleClick} className="shrink-0 mt-0.5" tabIndex={-1}>
+        <ActorAvatars group={group} />
       </button>
 
-      <div className="flex-1 min-w-0 flex flex-col justify-center">
-        <div className="flex items-start justify-between gap-2">
-          <button onClick={handleClick} className="min-w-0 text-left">
-            <p className={`text-[14px] leading-tight ${!n.read ? 'text-slate-900 font-medium' : 'text-slate-600'} flex items-center gap-1 flex-wrap`}>
-              <span className="font-bold text-slate-900 flex items-center gap-1">
-                {n.actorName}
-                {(n.actorName?.toLowerCase().includes('philippe boechat') || n.actorId === 'gONefSw0DwPvTZBmFFIUn0sau4w2') && (
-                  <BadgeCheck className="w-3.5 h-3.5 text-indigo-600 fill-indigo-600 text-white shrink-0" strokeWidth={2.5} />
+      {/* Content */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-start gap-2 justify-between">
+          <button onClick={handleClick} className="min-w-0 text-left flex-1">
+            {/* Main text */}
+            <p className={`text-[13.5px] leading-snug ${!group.read ? 'text-slate-900 font-semibold' : 'text-slate-600 font-medium'}`}>
+              {/* Bold actor name(s) */}
+              <span className="font-bold text-slate-900 flex items-center gap-1 flex-wrap inline">
+                {group.actors[0]?.displayName}
+                {/* Verified badge for specific users */}
+                {group.actors[0]?.uid === 'gONefSw0DwPvTZBmFFIUn0sau4w2' && (
+                  <BadgeCheck className="inline w-3.5 h-3.5 text-indigo-600 fill-indigo-600 text-white shrink-0 mx-0.5" strokeWidth={2.5} />
                 )}
               </span>{' '}
-              {getMessage()}
+              {/* Append the rest of the text (after actor name) */}
+              {text.replace(/^[^e&].*?\s/, '')}
             </p>
-            {n.extraText && (
-              <div className="text-[12px] text-slate-400 mt-1 line-clamp-2 italic bg-slate-50 rounded-lg px-2 py-1 border border-slate-100/50">
-                &ldquo;{renderTextWithLinks(n.extraText)}&rdquo;
-              </div>
+
+            {/* Context snippet */}
+            {group.extraText && (
+              <p className="text-[12px] text-slate-400 mt-1 line-clamp-1 italic bg-slate-50/80 rounded-lg px-2 py-0.5 border border-slate-100/60">
+                &ldquo;{group.extraText}&rdquo;
+              </p>
             )}
-            <p className={`text-[11px] mt-1.5 font-bold uppercase tracking-wider opacity-60 ${colorCls.icon}`}>
-              {n.createdAt ? (
-                <TimeAgo date={n.createdAt.toDate ? n.createdAt.toDate() : new Date(n.createdAt as any)} />
-              ) : 'Just now'}
+
+            {/* Timestamp */}
+            <p className={`text-[11px] mt-1 font-bold uppercase tracking-wider opacity-60 ${cls.icon}`}>
+              {group.updatedAt ? (
+                <TimeAgo date={group.updatedAt.toDate ? group.updatedAt.toDate() : new Date(group.updatedAt as any)} />
+              ) : 'Agora'}
             </p>
           </button>
-          
-          <div className="flex flex-col gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-all duration-200">
-            {!n.read && (
+
+          {/* Hover actions */}
+          <div className="flex flex-col gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-all duration-200 ml-1">
+            {!group.read && (
               <button
-                onClick={() => onRead(n.id)}
-                title={t('notifications.mark_read', 'Mark as read')}
+                onClick={(e) => { e.stopPropagation(); onGroupRead(group.rawIds); }}
+                title="Marcar como lida"
                 className="w-7 h-7 rounded-full bg-white shadow-sm border border-slate-100 hover:bg-primary/10 hover:text-primary hover:border-primary/20 flex items-center justify-center text-slate-400 transition-all active:scale-90"
               >
-                <Check size={14} />
+                <Check size={13} />
               </button>
             )}
             <button
-              onClick={() => onDelete(n.id)}
-              title={t('notifications.delete', 'Delete')}
+              onClick={(e) => { e.stopPropagation(); onDelete(group.rawIds); }}
+              title="Remover"
               className="w-7 h-7 rounded-full bg-white shadow-sm border border-slate-100 hover:bg-red-50 hover:text-red-500 hover:border-red-100 flex items-center justify-center text-slate-400 transition-all active:scale-90"
             >
-              <X size={14} />
+              <X size={13} />
             </button>
           </div>
         </div>
 
-        {isFriendRequest && !friendActionDone && (
-          <div className="mt-3 flex items-center gap-2">
+        {/* Friend request actions */}
+        {isFriendRequest && !friendDone && (
+          <div className="mt-2.5 flex items-center gap-2">
             <button
               onClick={() => handleFriendAction('accept')}
-              disabled={isBusy}
-              className="px-4 h-8 rounded-full bg-primary text-white text-[12px] font-bold hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/20 transition-all active:scale-95 disabled:opacity-50"
+              disabled={busy}
+              className="px-4 h-8 rounded-full bg-primary text-white text-[12px] font-bold hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/25 transition-all active:scale-95 disabled:opacity-50"
             >
-              {isBusy ? t('notifications.processing', '...') : t('notifications.accept', 'Accept')}
+              {busy ? '...' : 'Aceitar'}
             </button>
             <button
               onClick={() => handleFriendAction('decline')}
-              disabled={isBusy}
+              disabled={busy}
               className="px-4 h-8 rounded-full bg-slate-100 text-slate-600 text-[12px] font-bold hover:bg-slate-200 transition-all active:scale-95 disabled:opacity-50"
             >
-              {t('notifications.decline', 'Decline')}
+              Recusar
             </button>
             <Link
-              href={`/profile/${n.actorId}`}
+              href={`/profile/${group.actors[0]?.uid}`}
               onClick={onClose}
               className="ml-auto text-[11px] font-bold text-slate-400 hover:text-primary transition-colors uppercase tracking-widest"
             >
-              {t('notifications.view_profile', 'Ver Perfil')}
+              Ver Perfil
             </Link>
           </div>
         )}
 
-        {friendActionDone && (
+        {friendDone && (
           <div className="mt-2 flex items-center gap-2">
-            <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${friendActionDone === 'accepted' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-slate-50 text-slate-500 border border-slate-100'}`}>
-              {friendActionDone === 'accepted' ? <Check size={12} /> : <X size={12} />}
-              {friendActionDone === 'accepted'
-                ? t('notifications.accepted', 'Accepted')
-                : t('notifications.declined', 'Declined')}
+            <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${friendDone === 'accepted' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-slate-50 text-slate-500 border border-slate-100'}`}>
+              {friendDone === 'accepted' ? <Check size={11} /> : <X size={11} />}
+              {friendDone === 'accepted' ? 'Aceito' : 'Recusado'}
             </div>
           </div>
         )}
@@ -258,105 +275,76 @@ function NotifRow({
   );
 }
 
-// ─── Dropdown ─────────────────────────────────────────────────────────────────
+// ─── Main Dropdown ────────────────────────────────────────────────────────────
 
 export function NotificationsDropdown() {
-  const { t } = useTranslation('common');
-  const { profile } = useAppStore();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const { groups, unreadCount, loading, markGroupRead, markAllAsRead, remove } = useNotifications();
+
   const [isOpen, setIsOpen] = useState(false);
-  const [isMarkingAll, setIsMarkingAll] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'unread'>('all');
-  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [isMarkingAll, setIsMarkingAll] = useState(false);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const moreMenuRef = useRef<HTMLDivElement>(null);
-
-  const unreadNotifications = useMemo(() => notifications.filter((n) => !n.read), [notifications]);
-  const unreadCount = unreadNotifications.length;
-
-  const filteredNotifications = useMemo(() => {
-    return activeTab === 'unread' ? unreadNotifications : notifications;
-  }, [activeTab, notifications, unreadNotifications]);
-
-  // Close when another TopNav dropdown opens (prevents overlap)
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const opened = (event as CustomEvent<any>)?.detail?.name;
-      if (opened && opened !== 'notifications') setIsOpen(false);
-    };
-    window.addEventListener(DROPDOWN_EVENT, handler as EventListener);
-    return () => window.removeEventListener(DROPDOWN_EVENT, handler as EventListener);
-  }, []);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    emitDropdownOpen('notifications');
-  }, [isOpen]);
-
-  // Real-time subscription
-  useEffect(() => {
-    if (!profile?.uid) return;
-    const unsub = subscribeToNotifications(profile.uid, (newList) => {
-      setNotifications((prev) => {
-        // Play sound only if we have a previous list (not initial load)
-        // and there are new unread notifications that weren't in the previous list
-        if (prev.length > 0 && newList.length > prev.length) {
-          const hasNewUnread = newList.some(n => !n.read && !prev.some(p => p.id === n.id));
-          if (hasNewUnread) {
-            soundEffects.play('notification');
-          }
-        }
-        return newList;
-      });
-    }, 30);
-    return unsub;
-  }, [profile?.uid]);
+  const moreRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click
   useEffect(() => {
-    const onOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
-      }
-      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
-        setIsMoreMenuOpen(false);
-      }
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) setIsOpen(false);
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
     };
-    document.addEventListener('mousedown', onOutside);
-    return () => document.removeEventListener('mousedown', onOutside);
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const handleRead = useCallback(async (id: string) => {
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-    soundEffects.play('success'); // Subtle feedback
-    await markNotificationRead(id).catch(console.error);
+  // Close when another TopNav dropdown opens
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const name = (e as CustomEvent)?.detail?.name;
+      if (name && name !== 'notifications') setIsOpen(false);
+    };
+    window.addEventListener(DROPDOWN_EVENT, handler);
+    return () => window.removeEventListener(DROPDOWN_EVENT, handler);
   }, []);
 
-  const handleDelete = useCallback(async (id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
-    await deleteNotification(id).catch(console.error);
-  }, []);
+  useEffect(() => {
+    if (isOpen) emitDropdownOpen('notifications');
+  }, [isOpen]);
+
+  const filtered = useMemo(
+    () => activeTab === 'unread' ? groups.filter((g) => !g.read) : groups,
+    [activeTab, groups]
+  );
 
   const handleMarkAll = async () => {
-    if (!profile?.uid || isMarkingAll) return;
+    if (isMarkingAll) return;
     setIsMarkingAll(true);
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    await markAllNotificationsRead(profile.uid).catch(console.error);
+    soundEffects.play('success');
+    await markAllAsRead().catch(console.error);
     setIsMarkingAll(false);
   };
 
-  const handleOpen = () => setIsOpen((v) => !v);
+  const handleDelete = useCallback(async (rawIds: string[]) => {
+    rawIds.forEach((id) => remove(id).catch(console.error));
+  }, [remove]);
+
+  const handleGroupRead = useCallback(async (rawIds: string[]) => {
+    soundEffects.play('success');
+    await markGroupRead(rawIds).catch(console.error);
+  }, [markGroupRead]);
+
   const handleClose = () => setIsOpen(false);
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Bell button */}
+      {/* ── Bell button ── */}
       <button
-        onClick={handleOpen}
+        onClick={() => setIsOpen((v) => !v)}
         className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 hover:scale-105 active:scale-95 group ${
-          isOpen ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-100/80 hover:bg-slate-200/80 text-slate-600'
+          isOpen ? 'bg-primary text-white shadow-lg shadow-primary/25' : 'bg-slate-100/80 hover:bg-slate-200/80 text-slate-600'
         }`}
-        aria-label="Notifications"
+        aria-label="Notificações"
       >
         <Bell className={`w-5 h-5 transition-transform duration-300 ${isOpen ? 'scale-110' : 'group-hover:rotate-12'}`} />
         {unreadCount > 0 && (
@@ -364,160 +352,168 @@ export function NotificationsDropdown() {
             <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-gradient-to-br from-rose-500 to-red-600 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1 border-2 border-white shadow-sm z-10">
               {unreadCount > 99 ? '99+' : unreadCount}
             </span>
-            <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 rounded-full animate-ping opacity-25" />
+            <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 rounded-full animate-ping opacity-20" />
           </>
         )}
       </button>
 
-      {/* Dropdown panel */}
-      {isOpen && (
-        <div className="absolute top-full right-0 mt-3 w-[400px] bg-white/95 backdrop-blur-xl rounded-[28px] shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-white/50 overflow-hidden z-50 animate-in fade-in slide-in-from-top-3 duration-300">
-          {/* Header */}
-          <div className="px-6 pt-5 pb-3 bg-white/50">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-black text-[18px] text-slate-900 tracking-tight">
-                {t('notifications.title', 'Notificações')}
-              </h3>
-              <div className="flex items-center gap-1">
-                <div className="relative" ref={moreMenuRef}>
+      {/* ── Panel ── */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -8, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.97 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className="absolute top-full right-0 mt-3 w-[400px] bg-white/97 backdrop-blur-2xl rounded-[28px] shadow-[0_20px_60px_rgba(0,0,0,0.13),0_4px_16px_rgba(0,0,0,0.06)] border border-white/60 overflow-hidden z-50"
+          >
+            {/* Header */}
+            <div className="px-5 pt-5 pb-3">
+              <div className="flex items-center justify-between mb-3.5">
+                <h3 className="font-black text-[17px] text-slate-900 tracking-tight">Notificações</h3>
+
+                <div className="relative" ref={moreRef}>
                   <button
-                    onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
-                    className={`p-2 rounded-xl transition-all active:scale-90 ${
-                      isMoreMenuOpen ? 'bg-primary/10 text-primary' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
-                    }`}
+                    onClick={() => setMoreOpen((v) => !v)}
+                    className={`p-2 rounded-xl transition-all active:scale-90 ${moreOpen ? 'bg-primary/10 text-primary' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
                   >
-                    <MoreHorizontal size={18} />
+                    <MoreHorizontal size={17} />
                   </button>
 
                   <AnimatePresence>
-                    {isMoreMenuOpen && (
+                    {moreOpen && (
                       <motion.div
-                        initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                        initial={{ opacity: 0, scale: 0.95, y: -8 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                        className="absolute top-full right-0 mt-2 w-56 bg-white rounded-[20px] shadow-[0_10px_30px_rgba(0,0,0,0.1)] border border-slate-100 z-[60] py-2 overflow-hidden"
+                        exit={{ opacity: 0, scale: 0.95, y: -8 }}
+                        className="absolute top-full right-0 mt-2 w-60 bg-white rounded-[20px] shadow-[0_10px_30px_rgba(0,0,0,0.1)] border border-slate-100 z-[60] py-1.5 overflow-hidden"
                       >
-                        <button 
-                          onClick={() => { handleMarkAll(); setIsMoreMenuOpen(false); }}
+                        <button
+                          onClick={() => { handleMarkAll(); setMoreOpen(false); }}
                           disabled={isMarkingAll || unreadCount === 0}
-                          className="w-full flex items-center gap-3 px-4 py-3 text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50 text-left"
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-40 text-left"
                         >
-                          <CheckCheck size={16} className="text-primary" />
-                          {t('notifications.mark_all_read', 'Marcar todas como lidas')}
+                          <CheckCheck size={15} className="text-primary" />
+                          Marcar todas como lidas
                         </button>
-
-                        <div className="h-px bg-slate-50 mx-2 my-1" />
-
+                        <div className="h-px bg-slate-50 mx-3 my-1" />
                         <Link
                           href="/notifications"
-                          onClick={() => { setIsMoreMenuOpen(false); handleClose(); }}
-                          className="flex items-center gap-3 px-4 py-3 text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                          onClick={() => { setMoreOpen(false); handleClose(); }}
+                          className="flex items-center gap-3 px-4 py-2.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
                         >
-                          <Bell size={16} className="text-slate-400" />
-                          {t('notifications.see_all_full', 'Ver todas as notificações')}
+                          <Bell size={15} className="text-slate-400" />
+                          Ver todas as notificações
                         </Link>
-                        
                         <Link
                           href="/settings/notifications"
-                          onClick={() => { setIsMoreMenuOpen(false); handleClose(); }}
-                          className="flex items-center gap-3 px-4 py-3 text-[13px] font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                          onClick={() => { setMoreOpen(false); handleClose(); }}
+                          className="flex items-center gap-3 px-4 py-2.5 text-[13px] font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
                         >
-                          <Sparkles size={16} className="text-amber-500" />
-                          {t('notifications.settings', 'Configurações')}
+                          <Sparkles size={15} className="text-amber-500" />
+                          Configurações
                         </Link>
                       </motion.div>
                     )}
                   </AnimatePresence>
                 </div>
               </div>
+
+              {/* Tabs */}
+              <div className="flex items-center gap-1 bg-slate-100/60 p-1 rounded-[14px]">
+                {(['all', 'unread'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`flex-1 py-1.5 text-[12px] font-bold rounded-[10px] transition-all flex items-center justify-center gap-1.5 ${
+                      activeTab === tab
+                        ? 'bg-white text-primary shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    {tab === 'all' ? 'Todas' : 'Não lidas'}
+                    {tab === 'unread' && unreadCount > 0 && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Tabs */}
-            <div className="flex items-center gap-1 bg-slate-100/50 p-1 rounded-[14px]">
-              <button
-                onClick={() => setActiveTab('all')}
-                className={`flex-1 py-1.5 text-[12px] font-bold rounded-[10px] transition-all ${
-                  activeTab === 'all' 
-                    ? 'bg-white text-primary shadow-sm' 
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Todas
-              </button>
-              <button
-                onClick={() => setActiveTab('unread')}
-                className={`flex-1 py-1.5 text-[12px] font-bold rounded-[10px] transition-all flex items-center justify-center gap-1.5 ${
-                  activeTab === 'unread' 
-                    ? 'bg-white text-primary shadow-sm' 
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Não lidas
-                {unreadCount > 0 && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                )}
-              </button>
-            </div>
-          </div>
-
-          <div className="max-h-[400px] overflow-y-auto divide-y divide-slate-100/50 scrollbar-none">
-            <AnimatePresence initial={false} mode="popLayout">
-              {filteredNotifications.length === 0 ? (
-                <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="py-16 px-8 flex flex-col items-center text-center gap-4"
-                >
-                  <div className="w-16 h-16 rounded-3xl bg-slate-50 flex items-center justify-center text-slate-200 border border-slate-100/50 transform rotate-12">
-                    <Bell className="w-8 h-8" />
+            {/* List */}
+            <div className="max-h-[420px] overflow-y-auto divide-y divide-slate-100/60 scrollbar-none">
+              {loading ? (
+                // Skeleton
+                Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="flex gap-3 px-4 py-3.5">
+                    <div className="w-11 h-11 rounded-full bg-slate-100 animate-pulse shrink-0" />
+                    <div className="flex-1 space-y-2 pt-1">
+                      <div className="h-3 bg-slate-100 animate-pulse rounded-full w-3/4" />
+                      <div className="h-2.5 bg-slate-100 animate-pulse rounded-full w-1/2" />
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-[15px] text-slate-900 font-bold mb-1">
-                      {activeTab === 'unread' ? 'Nenhuma notificação não lida' : 'Nada por aqui ainda'}
-                    </p>
-                    <p className="text-[13px] text-slate-500 leading-relaxed">
-                      {activeTab === 'unread' 
-                        ? 'Você está em dia com todas as suas interações!' 
-                        : 'Suas notificações aparecerão aqui quando alguém interagir com você.'}
-                    </p>
-                  </div>
-                  {activeTab === 'unread' && notifications.length > 0 && (
-                    <button 
-                      onClick={() => setActiveTab('all')}
-                      className="text-[12px] font-bold text-primary hover:underline"
-                    >
-                      Ver todas as notificações
-                    </button>
-                  )}
-                </motion.div>
-              ) : (
-                filteredNotifications.map((n) => (
-                  <NotifRow
-                    key={n.id}
-                    n={n}
-                    compact
-                    onRead={handleRead}
-                    onDelete={handleDelete}
-                    onClose={handleClose}
-                  />
                 ))
+              ) : (
+                <AnimatePresence initial={false} mode="popLayout">
+                  {filtered.length === 0 ? (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="py-14 px-6 flex flex-col items-center text-center gap-3"
+                    >
+                      <div className="w-16 h-16 rounded-3xl bg-slate-50 flex items-center justify-center text-slate-200 border border-slate-100/60 rotate-12">
+                        <Bell className="w-8 h-8" />
+                      </div>
+                      <div>
+                        <p className="text-[15px] text-slate-800 font-bold mb-1">
+                          {activeTab === 'unread' ? 'Você está em dia! 🎉' : 'Nada por aqui ainda'}
+                        </p>
+                        <p className="text-[12.5px] text-slate-500 leading-relaxed">
+                          {activeTab === 'unread'
+                            ? 'Todas as notificações foram lidas.'
+                            : 'Suas interações aparecerão aqui.'}
+                        </p>
+                      </div>
+                      {activeTab === 'unread' && groups.length > 0 && (
+                        <button onClick={() => setActiveTab('all')} className="text-[12px] font-bold text-primary hover:underline">
+                          Ver todas
+                        </button>
+                      )}
+                    </motion.div>
+                  ) : (
+                    filtered.map((group) => (
+                      <GroupRow
+                        key={group.groupKey}
+                        group={group}
+                        onGroupRead={handleGroupRead}
+                        onDelete={handleDelete}
+                        onClose={handleClose}
+                      />
+                    ))
+                  )}
+                </AnimatePresence>
               )}
-            </AnimatePresence>
-          </div>
-
-          {notifications.length > 0 && (
-            <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/50">
-              <Link
-                href="/notifications"
-                onClick={handleClose}
-                className="block text-center text-[13px] font-semibold text-primary hover:text-primary/80 transition-colors py-1"
-              >
-                {t('notifications.view_all', 'View all notifications →')}
-              </Link>
             </div>
-          )}
-        </div>
-      )}
+
+            {/* Footer */}
+            {groups.length > 0 && (
+              <div className="px-4 py-3 border-t border-slate-100/60 bg-slate-50/40">
+                <Link
+                  href="/notifications"
+                  onClick={handleClose}
+                  className="block text-center text-[12.5px] font-semibold text-primary hover:text-primary/80 transition-colors py-0.5"
+                >
+                  Ver todas as notificações →
+                </Link>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
+
+// ─── useEffect needs to be imported ──────────────────────────────────────────
+// (not destructured above — adding here to avoid lint errors)
+import { useEffect } from 'react';

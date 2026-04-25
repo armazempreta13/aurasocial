@@ -10,3 +10,4 @@ coverage/
 *.zip
 .env*
 !.env.example
+otp_debug.json

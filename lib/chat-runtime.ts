@@ -290,6 +290,7 @@ export async function postRuntimeMessage(
       lastMessage: type === 'image' ? '📷 Foto' : text,
       lastMessageTime: serverTimestamp(),
       lastMessageSenderId: senderId,
+      lastMessageId: msgRef.id,
       updatedAt: serverTimestamp(),
       ...(params.senderMetadata ? { [`participantMetadata.${senderId}`]: params.senderMetadata } : {}),
     });
@@ -329,14 +330,17 @@ export async function markMessagesAsRead(
   try {
     const q = query(
       collection(db, 'chats', chatId, 'messages'),
-      where('senderId', '!=', viewerUid),
       where('read', '==', false),
     );
     const snap = await getDocs(q);
     if (snap.empty) return;
 
     const batch = writeBatch(db);
-    snap.docs.forEach((d) => batch.update(d.ref, { read: true }));
+    snap.docs.forEach((d) => {
+      if (d.data().senderId !== viewerUid) {
+        batch.update(d.ref, { read: true });
+      }
+    });
     await batch.commit();
   } catch (e) {
     console.error('Failed to mark messages as read:', e);

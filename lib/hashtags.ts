@@ -25,7 +25,7 @@ export function extractHashtags(content: string) {
 }
 
 export function rankTrendingHashtags(posts: any[]) {
-  const scores = new Map<string, number>();
+  const scores = new Map<string, { score: number; count: number }>();
 
   posts.forEach((post, index) => {
     const fromField = Array.isArray(post?.hashtags) ? post.hashtags : [];
@@ -45,15 +45,20 @@ export function rankTrendingHashtags(posts: any[]) {
       const normalizedTag = normalizeHashtagTag(tag);
       if (!normalizedTag) return;
 
-      scores.set(normalizedTag, (scores.get(normalizedTag) || 0) + engagementScore + recencyScore);
+      const prev = scores.get(normalizedTag) || { score: 0, count: 0 };
+      scores.set(normalizedTag, {
+        score: prev.score + engagementScore + recencyScore,
+        count: prev.count + 1,
+      });
     });
   });
 
   return Array.from(scores.entries())
-    .sort((a, b) => b[1] - a[1])
+    .sort((a, b) => b[1].score - a[1].score)
     .slice(0, 6)
-    .map(([tag, score]) => ({
+    .map(([tag, meta]) => ({
       tag,
-      score: Math.round(score * 10) / 10,
+      score: Math.round(meta.score * 10) / 10,
+      count: meta.count,
     }));
 }

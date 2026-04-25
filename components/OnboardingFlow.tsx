@@ -1,375 +1,696 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '@/lib/store';
-import { doc, updateDoc, query, collection, where, getDocs, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/firebase';
-import { Sparkles, Check, ChevronRight, User, Image as ImageIcon, Loader2, Upload, X, ArrowLeft } from 'lucide-react';
-import { handleFirestoreError, OperationType } from '@/lib/firebase-errors';
+import { db, auth } from '@/firebase';
+import { sendEmailVerification } from 'firebase/auth';
+import { doc, updateDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
+
+import { Check, Camera, Sparkles, ArrowRight, LogOut, Mail, Smartphone } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { uploadImage } from '@/lib/image-utils';
-import { motion, AnimatePresence } from 'motion/react';
 
-const INTEREST_CATEGORIES = [
-  { id: 'tech', label: '💻 Tecnologia', tags: ['IA', 'Web3', 'Startups', 'Programação', 'Gadgets'] },
-  { id: 'design', label: '🎨 Design', tags: ['UI/UX', 'Tipografia', 'Ilustração', '3D', 'Arquitetura'] },
-  { id: 'lifestyle', label: '🌱 Lifestyle', tags: ['Viagens', 'Fitness', 'Gastronomia', 'Moda', 'Bem-estar'] },
-  { id: 'entertainment', label: '🎮 Entretenimento', tags: ['Filmes', 'Games', 'Música', 'Anime', 'Livros'] },
-  { id: 'business', label: '💼 Negócios', tags: ['Empreendedorismo', 'Marketing', 'Finanças', 'Liderança', 'Produtividade'] },
-  { id: 'science', label: '🔬 Ciência', tags: ['Astronomia', 'Biologia', 'Física', 'Meio Ambiente', 'Medicina'] },
-];
-
-const STEPS = [
-  { id: 1, label: 'Seu @', icon: User },
-  { id: 2, label: 'Perfil', icon: ImageIcon },
-  { id: 3, label: 'Interesses', icon: Sparkles },
+const INTERESTS_OPTIONS = [
+  'Tecnologia', 'Programação', 'Música', 'Games', 'Cinema', 
+  'Culinária', 'Esportes', 'Saúde & Fitness', 'Design', 
+  'Finanças', 'Viagens', 'Fotografia', 'Leitura', 'Moda',
+  'Ciência', 'Negócios', 'Animais', 'Memes', 'Arte', 'Cripto'
 ];
 
 export function OnboardingFlow() {
-  const { profile, setProfile } = useAppStore();
-  const [step, setStep] = useState(1);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [direction, setDirection] = useState<1 | -1>(1);
+  const user = useAppStore((state) => state.user);
+  const profile = useAppStore((state) => state.profile);
+  const setProfile = useAppStore((state) => state.setProfile);
 
-  // Step 1: Username
+  const [step, setStep] = useState(2); // Começa na 2 porque a 1 é o cadastro inicial feito
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  // Etapa 2: Identidade
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [username, setUsername] = useState('');
-  const [usernameStatus, setUsernameStatus] = useState<'idle' | 'checking' | 'available' | 'taken' | 'invalid'>('idle');
-  const usernameDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [usernameSuggestions, setUsernameSuggestions] = useState<string[]>([]);
+  const [isUsernameAvailable, setIsUsernameAvailable] = useState<boolean | null>(null);
 
-  // Step 2: Photo + Bio
+  // Etapa 3: Informações Básicas
+  const [birthDate, setBirthDate] = useState('');
+  const [gender, setGender] = useState('');
+  const [customGender, setCustomGender] = useState('');
+
+  // Etapa 4: OTP
+  const [otpValues, setOtpValues] = useState<string[]>(['', '', '', '', '', '']);
+  const [sentOtp, setSentOtp] = useState('');
+  const [otpTimer, setOtpTimer] = useState(60);
+  const [otpMethod, setOtpMethod] = useState<'email' | 'sms'>('email');
+  const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Etapa 5: Perfil
   const [bio, setBio] = useState('');
-  const [photoURL, setPhotoURL] = useState(profile?.photoURL || '');
-  const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState('');
 
-  // Step 3: Interests
+  // Etapa 6: Interesses
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
 
-  // Pre-fill username from displayName
+  // Efeito para preencher o nome vindo do Auth/Google
   useEffect(() => {
-    if (profile?.displayName) {
-      const base = profile.displayName.toLowerCase().replace(/[^a-z0-9]/g, '');
-      setUsername(base);
+    if (profile) {
+      const parts = (profile.displayName || '').split(' ');
+      setFirstName(parts[0] || '');
+      setLastName(parts.slice(1).join(' ') || '');
+      
+      // Gerar username inicial sugerido
+      if (profile.displayName) {
+        const base = profile.displayName.toLowerCase().replace(/[^a-z0-9]/g, '');
+        setUsername(base);
+        checkUsernameAvailability(base);
+      } else if (profile.email) {
+        const base = profile.email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');
+        setUsername(base);
+        checkUsernameAvailability(base);
+      }
     }
-    if (profile?.photoURL) setPhotoURL(profile.photoURL);
   }, [profile]);
 
-  // Username availability check with debounce
+  // Timer do OTP
   useEffect(() => {
-    if (!username) { setUsernameStatus('idle'); return; }
-    const clean = username.toLowerCase().replace(/[^a-z0-9_]/g, '');
-    if (clean.length < 3) { setUsernameStatus('invalid'); return; }
+    if (step === 4 && otpTimer > 0) {
+      const timer = setTimeout(() => setOtpTimer(otpTimer - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [step, otpTimer]);
 
-    setUsernameStatus('checking');
-    if (usernameDebounceRef.current) clearTimeout(usernameDebounceRef.current);
-    usernameDebounceRef.current = setTimeout(async () => {
-      try {
-        const q = query(collection(db, 'users'), where('username', '==', clean));
-        const snap = await getDocs(q);
-        const isTaken = snap.docs.some(d => d.id !== profile?.uid);
-        setUsernameStatus(isTaken ? 'taken' : 'available');
-      } catch {
-        setUsernameStatus('idle');
+  // Verificar disponibilidade do username
+  const checkUsernameAvailability = async (nameToCheck: string) => {
+    if (!nameToCheck || nameToCheck.length < 3) {
+      setIsUsernameAvailable(false);
+      return;
+    }
+    try {
+      const q = query(collection(db, 'users'), where('username', '==', nameToCheck));
+      const snap = await getDocs(q);
+      
+      // Se for o meu próprio username atual, está liberado
+      const isMine = snap.docs.some(doc => doc.id === user?.uid);
+      
+      if (snap.empty || isMine) {
+        setIsUsernameAvailable(true);
+        setUsernameSuggestions([]);
+      } else {
+        setIsUsernameAvailable(false);
+        // Gerar sugestões
+        const suggestions = [
+          `${nameToCheck}_${Math.floor(Math.random() * 99)}`,
+          `${nameToCheck}${Math.floor(Math.random() * 999)}`,
+          `sou_${nameToCheck}`,
+          `real_${nameToCheck}`
+        ];
+        setUsernameSuggestions(suggestions);
       }
-    }, 500);
-    return () => { if (usernameDebounceRef.current) clearTimeout(usernameDebounceRef.current); };
-  }, [username, profile?.uid]);
-
-  const handlePhotoUpload = async (file: File) => {
-    setIsUploading(true);
-    try {
-      const result = await uploadImage(file);
-      setPhotoURL(result.url);
-    } catch (e: any) {
-      alert('Erro ao enviar foto: ' + e.message);
-    } finally {
-      setIsUploading(false);
+    } catch (err) {
+      console.error(err);
     }
   };
 
-  const toggleInterest = (tag: string) => {
-    setSelectedInterests(prev =>
-      prev.includes(tag) ? prev.filter(i => i !== tag) : [...prev, tag]
-    );
+  // Quando digita o username
+  const handleUsernameChange = (val: string) => {
+    const clean = val.toLowerCase().replace(/[^a-z0-9_.-]/g, '');
+    setUsername(clean);
+    setError('');
+    // Debounce da validação
+    const timer = setTimeout(() => checkUsernameAvailability(clean), 500);
+    return () => clearTimeout(timer);
   };
 
-  const goNext = () => {
-    setDirection(1);
-    setStep(s => Math.min(s + 1, 3) as 1 | 2 | 3);
-  };
+  // Enviar Código de Verificação Real via API do Backend
+  const triggerOtp = async () => {
+    setError('');
+    if (!user?.uid || !profile?.email) return;
 
-  const goBack = () => {
-    setDirection(-1);
-    setStep(s => Math.max(s - 1, 1) as 1 | 2 | 3);
-  };
-
-  const handleComplete = async () => {
-    if (!profile || selectedInterests.length < 3) return;
-    setIsSubmitting(true);
     try {
-      const cleanUsername = username.toLowerCase().replace(/[^a-z0-9_]/g, '');
-      const userRef = doc(db, 'users', profile.uid);
-      const updatedData = {
-        username: cleanUsername,
-        bio: bio.trim(),
-        photoURL: photoURL || profile.photoURL || '',
-        interests: selectedInterests,
-        onboardingCompleted: true,
-        updatedAt: serverTimestamp(),
-      };
-      await updateDoc(userRef, updatedData);
-      // ✅ Instant Zustand update
-      useAppStore.setState(state => ({
-        profile: state.profile ? { ...state.profile, ...updatedData } : state.profile
-      }));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${profile.uid}`);
+      setLoading(true);
+      const idToken = await auth.currentUser?.getIdToken();
+      
+      const res = await fetch('/api/otp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: profile.email, uid: user.uid, idToken })
+      });
+      
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || 'Não foi possível enviar o código.');
+      }
+      
+      setOtpTimer(60);
+      setOtpValues(['', '', '', '', '', '']);
+
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Falha ao gerar código de verificação.');
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   };
 
-  const canProceedStep1 = usernameStatus === 'available' && username.length >= 3;
-  const canProceedStep2 = true; // bio is optional
-  const canComplete = selectedInterests.length >= 3;
 
-  const slideVariants = {
-    enter: (dir: number) => ({ x: dir > 0 ? 80 : -80, opacity: 0 }),
-    center: { x: 0, opacity: 1 },
-    exit: (dir: number) => ({ x: dir > 0 ? -80 : 80, opacity: 0 }),
+
+  // Lidar com digitação de OTP
+  const handleOtpChange = (index: number, value: string) => {
+    if (!/^\d*$/.test(value)) return;
+    const newOtp = [...otpValues];
+    newOtp[index] = value.slice(-1);
+    setOtpValues(newOtp);
+
+    if (value && index < 5) {
+      otpRefs.current[index + 1]?.focus();
+    }
   };
+
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !otpValues[index] && index > 0) {
+      otpRefs.current[index - 1]?.focus();
+    }
+  };
+
+  // Lidar com upload de imagem
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setAvatarFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setAvatarPreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Toggle de interesses
+  const handleInterestToggle = (interest: string) => {
+    if (selectedInterests.includes(interest)) {
+      setSelectedInterests(selectedInterests.filter(i => i !== interest));
+    } else {
+      setSelectedInterests([...selectedInterests, interest]);
+    }
+  };
+
+  // Avançar Etapa
+  const nextStep = async () => {
+    setError('');
+    setLoading(true);
+
+    try {
+      if (step === 2) {
+        // Validação Etapa 2
+        if (!firstName.trim()) throw new Error('Nome é obrigatório.');
+        if (!username.trim()) throw new Error('Nome de usuário (@handle) é obrigatório.');
+        if (!isUsernameAvailable) throw new Error('Este @handle não está disponível.');
+        
+        // Salvar progresso incremental
+        if (user) {
+          const userRef = doc(db, 'users', user.uid);
+          await updateDoc(userRef, {
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
+            displayName: `${firstName.trim()} ${lastName.trim()}`.trim(),
+            username: username.trim()
+          });
+        }
+        setStep(3);
+      } 
+      else if (step === 3) {
+        // Validação Etapa 3
+        if (!birthDate) throw new Error('Data de nascimento é obrigatória.');
+        
+        // Validar idade (13+)
+        const birth = new Date(birthDate);
+        const today = new Date();
+        let age = today.getFullYear() - birth.getFullYear();
+        const m = today.getMonth() - birth.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+          age--;
+        }
+        if (age < 13) throw new Error('A Aura é restrita a maiores de 13 anos.');
+
+        if (user) {
+          const userRef = doc(db, 'users', user.uid);
+          await updateDoc(userRef, {
+            birthDate,
+            gender: gender === 'custom' ? customGender : gender
+          });
+        }
+        
+        // Ir para OTP
+        triggerOtp();
+        setStep(4);
+      } 
+      else if (step === 4) {
+        // Validação Etapa 4 (Código OTP Real)
+        const code = otpValues.join('');
+        if (code.length < 6) throw new Error('Por favor, digite o código de 6 dígitos completo.');
+
+        if (user) {
+          const idToken = await auth.currentUser?.getIdToken();
+          const res = await fetch('/api/otp/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uid: user.uid, code, idToken })
+          });
+
+
+          const data = await res.json();
+
+          if (!res.ok) {
+            throw new Error(data.error || 'Falha na validação do código.');
+          }
+        }
+        setStep(5);
+      }
+ 
+      else if (step === 5) {
+        // Validação Etapa 5 (Perfil)
+        let photoURL = profile?.photoURL || '';
+        if (avatarFile && user) {
+          const uploadRes = await uploadImage(avatarFile);
+          photoURL = uploadRes.url;
+        }
+
+
+        if (user) {
+          const userRef = doc(db, 'users', user.uid);
+          await updateDoc(userRef, {
+            photoURL,
+            bio: bio.trim()
+          });
+        }
+        setStep(6);
+      } 
+      else if (step === 6) {
+        // Finalizar Onboarding
+        if (user) {
+          const userRef = doc(db, 'users', user.uid);
+          await updateDoc(userRef, {
+            interests: selectedInterests,
+            onboardingCompleted: true,
+            updatedAt: serverTimestamp()
+          });
+          
+          // Atualizar store
+          if (profile) {
+            setProfile({
+              ...profile,
+              onboardingCompleted: true,
+              interests: selectedInterests
+            });
+          }
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || 'Ocorreu um erro ao processar.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Pular etapa (se opcional)
+  const skipStep = async () => {
+    setError('');
+    if (step === 5) {
+      setStep(6);
+    } else if (step === 6) {
+      try {
+        setLoading(true);
+        if (user && profile) {
+          const userRef = doc(db, 'users', user.uid);
+          await updateDoc(userRef, { 
+            onboardingCompleted: true,
+            updatedAt: serverTimestamp()
+          });
+          setProfile({ ...profile, onboardingCompleted: true });
+        }
+      } catch (err: any) {
+        console.error(err);
+        setError('Não foi possível concluir o onboarding.');
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+
+  if (!profile || profile.onboardingCompleted) return null;
+
+  const progressPercentage = ((step - 1) / 5) * 100;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#f4f7fe] p-4 font-sans">
-      {/* Background blobs */}
-      <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-primary/10 blur-[120px] rounded-full pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-5%] w-[40%] h-[40%] bg-violet-200/40 blur-[100px] rounded-full pointer-events-none" />
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#f4f7ff] p-4">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(129,140,248,0.12),_transparent_30%),radial-gradient(circle_at_bottom_left,_rgba(244,114,182,0.08),_transparent_30%)]" />
 
-      <div className="w-full max-w-[520px] bg-white rounded-[32px] shadow-[0_8px_40px_rgba(0,0,0,0.06)] border border-slate-100/60 overflow-hidden relative z-10">
-        {/* Progress bar */}
-        <div className="h-1 bg-slate-100">
-          <motion.div
-            className="h-full bg-gradient-to-r from-primary to-violet-500 rounded-full"
-            animate={{ width: `${(step / 3) * 100}%` }}
-            transition={{ duration: 0.4, ease: 'easeOut' }}
+      <div className="relative w-full max-w-xl overflow-hidden rounded-[32px] border border-white/60 bg-white/95 p-8 shadow-[0_30px_80px_rgba(46,50,119,0.15)] backdrop-blur-md md:p-10">
+        
+        {/* Barra de Progresso */}
+        <div className="relative mb-8 h-1.5 w-full rounded-full bg-[#eaeffa]">
+          <motion.div 
+            className="absolute top-0 left-0 h-full rounded-full bg-[#6f63dd]"
+            initial={{ width: 0 }}
+            animate={{ width: `${progressPercentage}%` }}
+            transition={{ duration: 0.4 }}
           />
         </div>
 
-        {/* Step indicators */}
-        <div className="flex items-center justify-center gap-6 pt-6 pb-2 px-8">
-          {STEPS.map((s) => {
-            const Icon = s.icon;
-            const isDone = step > s.id;
-            const isActive = step === s.id;
-            return (
-              <div key={s.id} className="flex flex-col items-center gap-1">
-                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all duration-300 ${
-                  isDone ? 'bg-green-100 text-green-600' : isActive ? 'bg-primary text-white shadow-md shadow-primary/30' : 'bg-slate-100 text-slate-400'
-                }`}>
-                  {isDone ? <Check className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
-                </div>
-                <span className={`text-[11px] font-bold transition-colors ${isActive ? 'text-primary' : isDone ? 'text-green-600' : 'text-slate-400'}`}>
-                  {s.label}
-                </span>
-              </div>
-            );
-          })}
+        {/* Header do Onboarding */}
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <span className="text-xs font-bold uppercase tracking-wider text-[#6f63dd]">
+              Passo {step} de 6
+            </span>
+            <h2 className="mt-1 text-[1.6rem] font-black tracking-tight text-[#2e3277]">
+              {step === 2 && 'Sua Identidade'}
+              {step === 3 && 'Informações Básicas'}
+              {step === 4 && 'Segurança'}
+              {step === 5 && 'Seu Perfil'}
+              {step === 6 && 'Personalize seu Feed'}
+            </h2>
+          </div>
+          
+          <button
+            onClick={() => useAppStore.getState().setUser(null)}
+            className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-slate-400 transition hover:bg-red-50 hover:text-red-500"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Sair
+          </button>
         </div>
 
-        <div className="px-8 pb-8 pt-4 overflow-hidden" style={{ minHeight: 420 }}>
-          <AnimatePresence mode="wait" custom={direction}>
-            {/* ─── STEP 1: USERNAME ─── */}
-            {step === 1 && (
-              <motion.div
-                key="step1"
-                custom={direction}
-                variants={slideVariants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={{ duration: 0.3, ease: 'easeOut' }}
-              >
-                <h2 className="text-[28px] font-extrabold text-[#2a2c5a] tracking-tight mb-1">Escolha seu @</h2>
-                <p className="text-slate-500 text-[15px] mb-6">Seu handle único na Aura. Pode mudar depois.</p>
+        {error && (
+          <div className="mb-6 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-600 animate-in fade-in duration-300">
+            {error}
+          </div>
+        )}
 
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-primary font-black text-lg">@</span>
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={e => setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
-                    placeholder="seuhandle"
-                    maxLength={30}
-                    className={`w-full bg-[#f2f5fd] border-2 rounded-2xl pl-10 pr-12 py-4 text-[16px] font-bold outline-none transition-all text-[#2a2c5a] placeholder-slate-400 ${
-                      usernameStatus === 'available' ? 'border-green-400 bg-green-50/30' :
-                      usernameStatus === 'taken' || usernameStatus === 'invalid' ? 'border-red-400 bg-red-50/30' :
-                      'border-transparent focus:border-primary/40'
-                    }`}
-                  />
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                    {usernameStatus === 'checking' && <Loader2 className="w-5 h-5 text-slate-400 animate-spin" />}
-                    {usernameStatus === 'available' && <Check className="w-5 h-5 text-green-500" />}
-                    {(usernameStatus === 'taken' || usernameStatus === 'invalid') && <X className="w-5 h-5 text-red-500" />}
-                  </div>
-                </div>
-                <p className={`mt-2 text-[13px] font-semibold transition-colors ${
-                  usernameStatus === 'available' ? 'text-green-600' :
-                  usernameStatus === 'taken' ? 'text-red-500' :
-                  usernameStatus === 'invalid' ? 'text-red-500' :
-                  'text-slate-400'
-                }`}>
-                  {usernameStatus === 'available' ? '✓ Disponível!' :
-                   usernameStatus === 'taken' ? '✗ Já está em uso. Tente outro.' :
-                   usernameStatus === 'invalid' ? 'Mínimo 3 caracteres (letras, números, _)' :
-                   usernameStatus === 'checking' ? 'Verificando...' :
-                   'Mínimo 3 caracteres. Apenas letras, números e _'}
-                </p>
-
-                <button
-                  onClick={goNext}
-                  disabled={!canProceedStep1}
-                  className="mt-8 w-full bg-primary hover:bg-primary/90 active:scale-[0.98] text-white font-bold py-4 rounded-2xl transition-all shadow-[0_8px_20px_rgba(122,99,241,0.25)] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  Continuar <ChevronRight className="w-5 h-5" />
-                </button>
-              </motion.div>
-            )}
-
-            {/* ─── STEP 2: PHOTO + BIO ─── */}
+        {/* Conteúdo das Etapas */}
+        <div className="min-h-[240px]">
+          <AnimatePresence mode="wait">
+            
+            {/* Etapa 2: Identidade */}
             {step === 2 && (
               <motion.div
-                key="step2"
-                custom={direction}
-                variants={slideVariants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={{ duration: 0.3, ease: 'easeOut' }}
+                key="step-2"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-5"
               >
-                <h2 className="text-[28px] font-extrabold text-[#2a2c5a] tracking-tight mb-1">Personalize seu perfil</h2>
-                <p className="text-slate-500 text-[15px] mb-6">Foto e bio são opcionais — mas fazem toda diferença.</p>
-
-                {/* Photo upload */}
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="relative">
-                    <div className="w-20 h-20 rounded-full bg-slate-100 overflow-hidden border-4 border-white shadow-md">
-                      {isUploading ? (
-                        <div className="w-full h-full flex items-center justify-center bg-slate-100">
-                          <Loader2 className="w-6 h-6 text-primary animate-spin" />
-                        </div>
-                      ) : photoURL ? (
-                        <img src={photoURL} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-3xl text-slate-300">
-                          {profile?.displayName?.charAt(0).toUpperCase() || '?'}
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="absolute -bottom-1 -right-1 w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center shadow-md hover:bg-primary/90 transition-all"
-                    >
-                      <Upload className="w-4 h-4" />
-                    </button>
-                    <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
-                      onChange={e => e.target.files?.[0] && handlePhotoUpload(e.target.files[0])} />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-slate-500">Nome</label>
+                    <input
+                      type="text"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      className="mt-1 w-full rounded-[16px] border border-[#eaeffa] bg-[#f8fbff] px-4 py-3 text-sm font-medium text-[#2e3277] outline-none transition-all focus:border-[#6f63dd] focus:bg-white focus:ring-4 focus:ring-[#6f63dd]/10"
+                      placeholder="Ex: João"
+                    />
                   </div>
                   <div>
-                    <p className="font-bold text-[#2a2c5a] text-[16px]">{profile?.displayName}</p>
-                    <p className="text-slate-400 text-[13px]">@{username}</p>
-                    <button type="button" onClick={() => fileInputRef.current?.click()}
-                      className="mt-1 text-[13px] font-bold text-primary hover:underline">
-                      {photoURL ? 'Trocar foto' : 'Adicionar foto'}
-                    </button>
+                    <label className="text-xs font-bold text-slate-500">Sobrenome</label>
+                    <input
+                      type="text"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      className="mt-1 w-full rounded-[16px] border border-[#eaeffa] bg-[#f8fbff] px-4 py-3 text-sm font-medium text-[#2e3277] outline-none transition-all focus:border-[#6f63dd] focus:bg-white focus:ring-4 focus:ring-[#6f63dd]/10"
+                      placeholder="Ex: Silva"
+                    />
                   </div>
                 </div>
 
-                {/* Bio */}
-                <div className="relative">
-                  <textarea
-                    value={bio}
-                    onChange={e => setBio(e.target.value.slice(0, 160))}
-                    placeholder="Conte um pouco sobre você... (opcional)"
-                    rows={4}
-                    className="w-full bg-[#f2f5fd] border-2 border-transparent focus:border-primary/40 rounded-2xl px-4 py-3 text-[15px] outline-none transition-all text-[#2a2c5a] placeholder-slate-400 resize-none"
-                  />
-                  <span className="absolute bottom-3 right-4 text-[11px] font-bold text-slate-400">{bio.length}/160</span>
-                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500">Nome de usuário único (@handle)</label>
+                  <div className="relative mt-1">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-slate-400">@</span>
+                    <input
+                      type="text"
+                      value={username}
+                      onChange={(e) => handleUsernameChange(e.target.value)}
+                      className="w-full rounded-[16px] border border-[#eaeffa] bg-[#f8fbff] pl-9 pr-12 py-3 text-sm font-bold text-[#2e3277] outline-none transition-all focus:border-[#6f63dd] focus:bg-white focus:ring-4 focus:ring-[#6f63dd]/10"
+                      placeholder="seunome"
+                    />
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                      {isUsernameAvailable === true && <Check className="h-5 w-5 text-emerald-500 animate-in zoom-in" />}
+                      {isUsernameAvailable === false && <span className="text-xs font-bold text-red-500">Indisponível</span>}
+                    </div>
+                  </div>
 
-                <div className="flex gap-3 mt-8">
-                  <button onClick={goBack}
-                    className="flex items-center gap-1 px-5 py-3 rounded-2xl border border-slate-200 text-slate-500 font-bold text-[14px] hover:bg-slate-50 transition-all">
-                    <ArrowLeft className="w-4 h-4" /> Voltar
-                  </button>
-                  <button onClick={goNext}
-                    className="flex-1 bg-primary hover:bg-primary/90 active:scale-[0.98] text-white font-bold py-3 rounded-2xl transition-all shadow-[0_8px_20px_rgba(122,99,241,0.25)] flex items-center justify-center gap-2">
-                    Continuar <ChevronRight className="w-5 h-5" />
-                  </button>
+                  {usernameSuggestions.length > 0 && (
+                    <div className="mt-3 animate-in fade-in">
+                      <p className="text-xs text-slate-400">Sugestões disponíveis:</p>
+                      <div className="mt-1.5 flex flex-wrap gap-2">
+                        {usernameSuggestions.map(sug => (
+                          <button
+                            key={sug}
+                            onClick={() => { setUsername(sug); setIsUsernameAvailable(true); setUsernameSuggestions([]); }}
+                            className="rounded-full bg-[#f2f5fc] px-3 py-1 text-xs font-bold text-[#6f63dd] hover:bg-[#6f63dd] hover:text-white transition"
+                          >
+                            @{sug}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}
 
-            {/* ─── STEP 3: INTERESTS ─── */}
+            {/* Etapa 3: Informações Básicas */}
             {step === 3 && (
               <motion.div
-                key="step3"
-                custom={direction}
-                variants={slideVariants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={{ duration: 0.3, ease: 'easeOut' }}
+                key="step-3"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-5"
               >
-                <h2 className="text-[28px] font-extrabold text-[#2a2c5a] tracking-tight mb-1">O que te interessa?</h2>
-                <p className="text-slate-500 text-[15px] mb-5">Selecione pelo menos 3. Seu feed será personalizado.</p>
+                <div>
+                  <label className="text-xs font-bold text-slate-500">Data de Nascimento</label>
+                  <input
+                    type="date"
+                    value={birthDate}
+                    onChange={(e) => setBirthDate(e.target.value)}
+                    className="mt-1 w-full rounded-[16px] border border-[#eaeffa] bg-[#f8fbff] px-4 py-3 text-sm font-medium text-[#2e3277] outline-none transition-all focus:border-[#6f63dd] focus:bg-white focus:ring-4 focus:ring-[#6f63dd]/10"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-400">Para garantir a segurança da comunidade, idade mínima de 13 anos.</p>
+                </div>
 
-                <div className="space-y-4 max-h-[280px] overflow-y-auto pr-1 custom-scrollbar">
-                  {INTEREST_CATEGORIES.map(cat => (
-                    <div key={cat.id}>
-                      <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider mb-2">{cat.label}</p>
-                      <div className="flex flex-wrap gap-2">
-                        {cat.tags.map(tag => {
-                          const selected = selectedInterests.includes(tag);
-                          return (
-                            <button
-                              key={tag}
-                              onClick={() => toggleInterest(tag)}
-                              className={`px-3 py-1.5 rounded-full text-[13px] font-bold transition-all duration-200 flex items-center gap-1.5 border ${
-                                selected
-                                  ? 'bg-primary text-white border-primary shadow-sm shadow-primary/20 scale-105'
-                                  : 'bg-white text-slate-600 border-slate-200 hover:border-primary/40 hover:text-primary'
-                              }`}
-                            >
-                              {selected && <Check className="w-3 h-3" />}
-                              {tag}
-                            </button>
-                          );
-                        })}
-                      </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-500">Gênero</label>
+                  <div className="mt-2 grid grid-cols-3 gap-3">
+                    {['Feminino', 'Masculino', 'Outro'].map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setGender(opt.toLowerCase())}
+                        className={`rounded-[16px] border py-3 text-sm font-semibold transition-all ${
+                          gender === opt.toLowerCase()
+                            ? 'border-[#6f63dd] bg-[#6f63dd]/5 text-[#6f63dd] ring-2 ring-[#6f63dd]/15'
+                            : 'border-[#eaeffa] bg-[#f8fbff] text-slate-600 hover:border-[#d2dbf0]'
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+
+                  {gender === 'outro' && (
+                    <div className="mt-3 animate-in slide-in-from-top-2">
+                      <input
+                        type="text"
+                        placeholder="Como você prefere se identificar?"
+                        value={customGender}
+                        onChange={(e) => setCustomGender(e.target.value)}
+                        className="w-full rounded-[16px] border border-[#eaeffa] bg-[#f8fbff] px-4 py-3 text-sm font-medium text-[#2e3277] outline-none transition-all focus:border-[#6f63dd] focus:bg-white focus:ring-4 focus:ring-[#6f63dd]/10"
+                      />
                     </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {/* Etapa 4: Segurança (OTP) */}
+            {step === 4 && (
+              <motion.div
+                key="step-4"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-6 text-center"
+              >
+                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-[#6f63dd]/10 text-[#6f63dd]">
+                  <Mail className="h-7 w-7" />
+                </div>
+                
+                <div>
+                  <p className="text-base font-bold text-slate-700">
+                    Digite o código de verificação
+                  </p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Enviamos um código de 6 dígitos para:
+                  </p>
+                  <p className="text-sm font-black text-[#6f63dd] mt-0.5">
+                    {profile?.email}
+                  </p>
+                </div>
+
+                {/* Inputs do Código OTP */}
+                <div className="flex justify-center gap-2 my-6">
+                  {otpValues.map((val, index) => (
+                    <input
+                      key={index}
+                      ref={(el) => { otpRefs.current[index] = el; }}
+                      type="text"
+                      value={val}
+                      maxLength={1}
+                      onChange={(e) => handleOtpChange(index, e.target.value)}
+                      onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                      className="h-12 w-10 text-center text-xl font-bold rounded-[12px] border border-[#eaeffa] bg-[#f8fbff] outline-none transition-all focus:border-[#6f63dd] focus:bg-white focus:ring-4 focus:ring-[#6f63dd]/10 text-[#2e3277]"
+                    />
                   ))}
                 </div>
 
-                <div className="flex gap-3 mt-6">
-                  <button onClick={goBack}
-                    className="flex items-center gap-1 px-5 py-3 rounded-2xl border border-slate-200 text-slate-500 font-bold text-[14px] hover:bg-slate-50 transition-all">
-                    <ArrowLeft className="w-4 h-4" /> Voltar
-                  </button>
-                  <button
-                    onClick={handleComplete}
-                    disabled={!canComplete || isSubmitting}
-                    className="flex-1 bg-primary hover:bg-primary/90 active:scale-[0.98] text-white font-bold py-3 rounded-2xl transition-all shadow-[0_8px_20px_rgba(122,99,241,0.25)] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Sparkles className="w-5 h-5" /> Entrar na Aura</>}
-                  </button>
+                <div>
+                  {otpTimer > 0 ? (
+                    <p className="text-xs text-slate-400">Aguarde {otpTimer}s para reenviar o código</p>
+                  ) : (
+                    <button
+                      onClick={triggerOtp}
+                      className="text-xs font-bold text-[#6f63dd] hover:underline"
+                    >
+                      Não recebeu? Reenviar código
+                    </button>
+                  )}
                 </div>
-                <p className="text-center text-[12px] text-slate-400 mt-3">
-                  {selectedInterests.length < 3 ? `Selecione mais ${3 - selectedInterests.length} para continuar` : `${selectedInterests.length} interesses selecionados ✓`}
-                </p>
               </motion.div>
             )}
+
+
+
+
+
+            {/* Etapa 5: Perfil */}
+            {step === 5 && (
+              <motion.div
+                key="step-5"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-5"
+              >
+                <div className="flex flex-col items-center justify-center">
+                  <div className="group relative h-24 w-24 overflow-hidden rounded-full bg-[#f2f5fc] shadow-inner border-2 border-[#eaeffa]">
+                    {avatarPreview ? (
+                      <img src={avatarPreview} alt="Preview" className="h-full w-full object-cover" />
+                    ) : profile?.photoURL ? (
+                      <img src={profile.photoURL} alt="Profile" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-slate-400">
+                        <Sparkles className="h-8 w-8" />
+                      </div>
+                    )}
+                    
+                    <label className="absolute inset-0 flex cursor-pointer flex-col items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+                      <Camera className="h-6 w-6 text-white" />
+                      <span className="text-[10px] font-bold text-white mt-1">Alterar</span>
+                      <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+                    </label>
+                  </div>
+                  <p className="mt-2 text-xs font-semibold text-slate-400">Foto de perfil (Opcional)</p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-slate-500">Sua Biografia (Opcional)</label>
+                  <textarea
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                    rows={3}
+                    placeholder="Conte um pouco sobre você..."
+                    className="mt-1 w-full resize-none rounded-[16px] border border-[#eaeffa] bg-[#f8fbff] px-4 py-3 text-sm font-medium text-[#2e3277] outline-none transition-all focus:border-[#6f63dd] focus:bg-white focus:ring-4 focus:ring-[#6f63dd]/10"
+                    maxLength={160}
+                  />
+                  <div className="text-right text-[11px] text-slate-400">
+                    {bio.length}/160
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Etapa 6: Interesses */}
+            {step === 6 && (
+              <motion.div
+                key="step-6"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-4"
+              >
+                <p className="text-center text-sm font-medium text-slate-600">
+                  Escolha pelo menos 3 tópicos para começar a povoar seu feed com o que você gosta.
+                </p>
+
+                <div className="flex flex-wrap justify-center gap-2 pt-2">
+                  {INTERESTS_OPTIONS.map((interest) => {
+                    const isSelected = selectedInterests.includes(interest);
+                    return (
+                      <button
+                        key={interest}
+                        onClick={() => handleInterestToggle(interest)}
+                        className={`rounded-full px-4 py-2 text-xs font-bold transition-all ${
+                          isSelected
+                            ? 'bg-[#6f63dd] text-white shadow-[0_4px_12px_rgba(111,99,221,0.3)]'
+                            : 'bg-[#f2f5fc] text-slate-600 hover:bg-[#eaeffa]'
+                        }`}
+                      >
+                        {interest}
+                      </button>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+
           </AnimatePresence>
         </div>
+
+        {/* Ações do Rodapé */}
+        <div className="mt-8 flex items-center justify-between border-t border-[#eaeffa] pt-6">
+          {/* Opção de Pular (Etapas 5 e 6) */}
+          {(step === 5 || step === 6) ? (
+            <button
+              onClick={skipStep}
+              disabled={loading}
+              className="text-sm font-bold text-slate-400 hover:text-slate-600 disabled:opacity-50"
+            >
+              Pular esta etapa
+            </button>
+          ) : (
+            <div />
+          )}
+
+          <button
+            onClick={nextStep}
+            disabled={loading || (step === 2 && !isUsernameAvailable)}
+            className="flex items-center gap-2 rounded-2xl bg-[#6f63dd] px-6 py-3.5 text-sm font-bold text-white shadow-[0_10px_25px_rgba(111,99,221,0.25)] transition-all hover:bg-[#5e53cd] hover:shadow-[0_12px_28px_rgba(111,99,221,0.35)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loading ? (
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            ) : (
+              <>
+                {step === 6 ? 'Concluir' : 'Avançar'}
+                <ArrowRight className="h-4 w-4" />
+              </>
+            )}
+          </button>
+        </div>
+
       </div>
     </div>
   );

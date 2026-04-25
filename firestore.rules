@@ -769,6 +769,7 @@ service cloud.firestore {
       allow update: if isAuthenticated() && currentUid() in resource.data.participants && (
         affectedOnly([
           'lastMessage', 'lastMessageAt', 'lastMessageSenderId',
+          'lastMessageTime', 'lastMessageId', 'participantMetadata',
           'updatedAt', 'unreadCounts', 'typingUsers'
         ]) ||
         isAdmin()
@@ -779,11 +780,10 @@ service cloud.firestore {
         allow read: if isAuthenticated() && isParticipantInChat(chatId);
         allow create: if isAuthenticated() &&
           isParticipantInChat(chatId) &&
-          isValidMessage() &&
-          uidUnchanged('senderId');
+          request.resource.data.senderId == request.auth.uid;
         allow update: if isAuthenticated() && (
-          (currentUid() == resource.data.senderId && affectedOnly(['content', 'isEdited', 'updatedAt'])) ||
-          (isParticipantInChat(chatId) && affectedOnly(['readBy', 'reactions', 'isDeleted', 'deletedAt'])) ||
+          (currentUid() == resource.data.senderId && affectedOnly(['text', 'content', 'isEdited', 'updatedAt'])) ||
+          (isParticipantInChat(chatId) && affectedOnly(['read', 'readBy', 'reactions', 'isDeleted', 'deletedAt'])) ||
           isAdmin()
         );
         allow delete: if isAuthenticated() && (

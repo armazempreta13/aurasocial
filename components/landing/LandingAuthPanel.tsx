@@ -150,7 +150,9 @@ export function LandingAuthPanel({
             email: credential.user.email || email.trim(),
             displayName: name.trim() || credential.user.displayName || '',
             photoURL: credential.user.photoURL || '',
+            onboardingCompleted: false,
             updatedAt: serverTimestamp(),
+
           },
           { merge: true }
         );

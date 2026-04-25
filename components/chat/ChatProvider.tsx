@@ -23,9 +23,10 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/firebase';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/lib/store';
 import { useSignaling } from '@/components/SignalingProvider';
+import { eventBus } from '@/lib/event-bus';
 import {
   postRuntimeMessage,
   syncChatUser,
@@ -39,6 +40,7 @@ import {
 import { uploadImage } from '@/lib/image-utils';
 import { ChatConversation } from './ChatConversation';
 import { soundEffects } from '@/lib/sound-effects';
+import { NewMessageFloatingButton } from './NewMessageFloatingButton';
 
 type OpenChatMode = 'floating' | 'page';
 
@@ -115,12 +117,34 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const profileUidRef = useRef<string | undefined>(profile?.uid);
   useEffect(() => { profileUidRef.current = profile?.uid; }, [profile?.uid]);
 
+  useEffect(() => {
+    const offOpen = eventBus.subscribe('chat:open_bubble', (payload: any) => {
+      if (payload?.chatId) {
+        setMinimizedChatIds((prev) => prev.filter((id) => id !== payload.chatId));
+        setFloatingChatIds((prev) => {
+          const without = prev.filter((id) => id !== payload.chatId);
+          const trimmed = without.length >= 3 ? without.slice(1) : without; // FLOATING_LIMIT = 3
+          return [...trimmed, payload.chatId];
+        });
+      }
+    });
+    return () => {
+      offOpen();
+    };
+  }, []);
+
   // FIX 2: prevChatRowsRef was MISSING in the original — caused ReferenceError
   const prevChatRowsRef = useRef<Record<string, any>[]>([]);
 
   // FIX 3: minimizedChatIds in a ref for use inside state updater closures
   const minimizedChatIdsRef = useRef<string[]>([]);
   useEffect(() => { minimizedChatIdsRef.current = minimizedChatIds; }, [minimizedChatIds]);
+
+  // Ref for floatingChatIds — used inside onSnapshot closure to avoid stale state
+  const floatingChatIdsRef = useRef<string[]>([]);
+  useEffect(() => { floatingChatIdsRef.current = floatingChatIds; }, [floatingChatIds]);
+
+  const lastSeenMessageIdRef = useRef<Record<string, string>>({});
 
   const playPop = useCallback(() => {
     soundEffects.play('pop');
@@ -150,10 +174,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
       setMinimizedChatIds((prev) => prev.filter((id) => id !== chatId));
       setFloatingChatIds((prev) => {
-        if (prev.includes(chatId)) return prev;
-        const trimmed = prev.length >= FLOATING_LIMIT ? prev.slice(1) : prev;
+        const without = prev.filter((id) => id !== chatId);
+        const trimmed = without.length >= FLOATING_LIMIT ? without.slice(1) : without;
         return [...trimmed, chatId];
       });
+      eventBus.emit('chat:open_bubble', { chatId });
     },
     [],
   );
@@ -172,6 +197,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       orderBy('updatedAt', 'desc'),
     );
 
+    // isInitialLoad é LOCAL ao closure do effect — reseta automaticamente
+    // toda vez que o effect re-assina (ex: quando o uid muda ou o effect remonta).
+    // Isso evita que mensagens antigas disparem bubbles.
+    let isInitialLoad = true;
+
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
@@ -185,11 +215,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             lastMessageTime: data.lastMessageTime?.toMillis?.() ?? data.updatedAt?.toMillis?.() ?? 0,
             lastMessageSenderId: data.lastMessageSenderId ?? null,
             lastMessage: data.lastMessage ?? null,
+            lastMessageId: data.lastMessageId ?? null,
           };
         });
 
-        // Fetch initial unread counts if this is the first load
-        if (prevChatRowsRef.current.length === 0 && rows.length > 0) {
+        // Fetch initial unread counts on first snapshot
+        if (isInitialLoad && rows.length > 0) {
           rows.forEach((row) => {
             const unreadQ = query(
               collection(db, 'chats', row.id, 'messages'),
@@ -208,44 +239,64 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         }
 
         // ── New message detection ─────────────────────────────────────────
-        // FIX 5: collect IDs of chats with new incoming messages,
-        // then open them via a queued microtask — NEVER call setState/openChatById
-        // synchronously inside onSnapshot (it's outside React's scheduler).
+        // Collect IDs of chats with new incoming messages,
+        // then open them via queueMicrotask — NEVER call setState
+        // synchronously inside onSnapshot.
         const toAutoOpen: string[] = [];
 
         rows.forEach((row) => {
-          const prev = prevChatRowsRef.current.find((p) => p.id === row.id);
-          const isNewIncoming =
-            row.lastMessageTime > 0 &&
-            row.lastMessage &&
-            row.lastMessageSenderId &&
-            row.lastMessageSenderId !== profileUidRef.current &&
-            (!prev || row.lastMessageTime > (prev.lastMessageTime ?? 0));
+          const prevMessageId = lastSeenMessageIdRef.current[row.id] || '';
+          const currentMessageId = row.lastMessageId || '';
 
-          if (isNewIncoming) {
-            toAutoOpen.push(row.id);
-            // Increment unread count
-            setUnreadMap((u) => ({ ...u, [row.id]: (u[row.id] ?? 0) + 1 }));
+          if (isInitialLoad) {
+            // Primeira snapshot: apenas registra os IDs já existentes no banco.
+            // NÃO abre nenhum bubble.
+            if (currentMessageId) {
+              lastSeenMessageIdRef.current[row.id] = currentMessageId;
+            }
+          } else {
+            // Snapshots subsequentes = mensagem nova de verdade
+            const isNewIncoming =
+              !!currentMessageId &&
+              !!row.lastMessageSenderId &&
+              row.lastMessageSenderId !== profileUidRef.current &&
+              currentMessageId !== prevMessageId;
+
+            if (isNewIncoming) {
+              lastSeenMessageIdRef.current[row.id] = currentMessageId;
+              toAutoOpen.push(row.id);
+              setUnreadMap((u) => ({ ...u, [row.id]: (u[row.id] ?? 0) + 1 }));
+            } else if (currentMessageId) {
+              // Mesma mensagem ou mensagem própria: apenas atualiza o ref
+              lastSeenMessageIdRef.current[row.id] = currentMessageId;
+            }
           }
         });
+
+        // Marca fim do load inicial
+        isInitialLoad = false;
 
         prevChatRowsRef.current = rows;
         setChatRows(rows);
 
-        // Queue auto-opens + sound after React processes the state above
+        // Abre bubbles e toca som após React processar o state acima
         if (toAutoOpen.length > 0) {
-          // Use queueMicrotask to run after the current synchronous block
           queueMicrotask(() => {
             playNotification();
             toAutoOpen.forEach((chatId) => {
-              // Only auto-open if the user hasn't minimized the chat intentionally
-              if (!minimizedChatIdsRef.current.includes(chatId)) {
-                setFloatingChatIds((prev) => {
-                  if (prev.includes(chatId)) return prev;
-                  const trimmed = prev.length >= FLOATING_LIMIT ? prev.slice(1) : prev;
-                  return [...trimmed, chatId];
-                });
+              const alreadyOpen = floatingChatIdsRef.current.includes(chatId);
+              if (alreadyOpen) {
+                // Chat já está aberto: não reabrir, apenas o unreadMap já foi incrementado
+                // para mostrar o badge no header do bubble.
+                return;
               }
+              // Chat não está visível: remover de minimized e adicionar em floating
+              setMinimizedChatIds((prev) => prev.filter((id) => id !== chatId));
+              setFloatingChatIds((prev) => {
+                const without = prev.filter((id) => id !== chatId);
+                const trimmed = without.length >= FLOATING_LIMIT ? without.slice(1) : without;
+                return [...trimmed, chatId];
+              });
             });
           });
         }
@@ -431,6 +482,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       });
       
       const chatId = runtimeChat.id as string;
+      
+      setChatRows((prev) => {
+        if (prev.some((c) => c.id === chatId)) return prev;
+        return [runtimeChat, ...prev];
+      });
+
       openChatById(chatId, mode);
       return chatId;
     },
@@ -454,8 +511,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const restoreFloatingChat = useCallback((chatId: string) => {
     setMinimizedChatIds((prev) => prev.filter((id) => id !== chatId));
     setFloatingChatIds((prev) => {
-      if (prev.includes(chatId)) return prev;
-      const trimmed = prev.length >= FLOATING_LIMIT ? prev.slice(1) : prev;
+      const without = prev.filter((id) => id !== chatId);
+      const trimmed = without.length >= FLOATING_LIMIT ? without.slice(1) : without;
       return [...trimmed, chatId];
     });
   }, []);
@@ -779,7 +836,8 @@ function ChatOverlay() {
     async (chatId: string, file: File) => {
       try {
         const result = await uploadImage(file);
-        await sendMessage(chatId, 'Imagem', 'image', result.url);
+        // Send with empty text — the image itself is the content
+        await sendMessage(chatId, '', 'image', result.url);
       } catch (error: any) {
         console.error('Chat upload error:', error);
         alert(`Falha ao enviar imagem: ${error.message}`);
@@ -795,17 +853,23 @@ function ChatOverlay() {
   return (
     <>
       {/* ── Floating chat windows ──────────────────────────────────────────── */}
-      <div className="pointer-events-none fixed bottom-0 right-0 z-[70] hidden max-w-[100vw] items-end gap-3 p-4 xl:flex">
-        {floatingChats.map((chat) => {
-          const isOnline = chat.otherUser?.status === 'online';
-          const isTyping = Boolean(typingByChat[chat.id]);
-          const composerValue = composerValues[chat.id] || '';
+      <div className="pointer-events-none fixed bottom-0 right-[72px] z-[90] flex max-w-[100vw] items-end gap-3 p-4">
+        <AnimatePresence mode="popLayout">
+          {floatingChats.map((chat) => {
+            const isOnline = chat.otherUser?.status === 'online';
+            const isTyping = Boolean(typingByChat[chat.id]);
+            const composerValue = composerValues[chat.id] || '';
 
-          return (
-            <div
-              key={chat.id}
-              className="pointer-events-auto flex h-[560px] w-[360px] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.18)]"
-            >
+            return (
+              <motion.div
+                key={chat.id}
+                layout
+                initial={{ opacity: 0, y: 50, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 50, scale: 0.95 }}
+                transition={{ type: 'spring', damping: 25, stiffness: 250 }}
+                className="pointer-events-auto flex h-[560px] w-[360px] flex-col overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.18)]"
+              >
               {/* Header */}
               <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                 <div className="flex min-w-0 items-center gap-3">
@@ -825,9 +889,17 @@ function ChatOverlay() {
                   </div>
 
                   <div className="min-w-0">
-                    <p className="truncate text-[14px] font-black text-slate-900">
-                      {chat.otherUser?.displayName || 'Carregando...'}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-[14px] font-black text-slate-900">
+                        {chat.otherUser?.displayName || 'Carregando...'}
+                      </p>
+                      {/* Unread badge for open but unread messages */}
+                      {(chat.unreadCount ?? 0) > 0 && (
+                        <span className="flex h-5 min-w-[20px] items-center justify-center rounded-full bg-indigo-600 px-1.5 text-[10px] font-black text-white shadow-sm animate-pulse">
+                          {chat.unreadCount > 9 ? '9+' : chat.unreadCount}
+                        </span>
+                      )}
+                    </div>
                     <p
                       className={`text-[10px] font-black uppercase tracking-[0.18em] transition-colors ${
                         isTyping ? 'text-indigo-500' : isOnline ? 'text-green-600' : 'text-slate-400'
@@ -897,12 +969,13 @@ function ChatOverlay() {
                   onUpload={(file) => handleUpload(chat.id, file)}
                 />
               </div>
-            </div>
+            </motion.div>
           );
         })}
+        </AnimatePresence>
       </div>
 
-      <div className="pointer-events-none fixed bottom-6 right-6 z-[80] hidden flex-col items-end gap-3 xl:flex">
+      <div className="pointer-events-none fixed bottom-6 right-[80px] z-[80] hidden flex-col items-end gap-3 md:flex">
         <AnimatePresence mode="popLayout">
           {minimizedChats.map((chat) => {
             const isOnline = chat.otherUser?.status === 'online';
@@ -978,6 +1051,8 @@ function ChatOverlay() {
           })}
         </AnimatePresence>
       </div>
+
+      <NewMessageFloatingButton />
     </>
   );
 }
