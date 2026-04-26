@@ -222,14 +222,14 @@ export function Lightbox({ isOpen, onClose, imageUrls = [], initialIndex = 0, po
     setMentionSearch(null);
   };
 
-  const handleMentionSelect = (username: string) => {
+  const handleMentionSelect = (user: { username: string }) => {
     if (!mentionSearch || !commentInputRef.current) return;
     const { text, index } = mentionSearch;
-    const newContent = newComment.substring(0, index + 1) + username + newComment.substring(index + 1 + text.length);
+    const newContent = newComment.substring(0, index + 1) + user.username + newComment.substring(index + 1 + text.length);
     setNewComment(newContent);
     setMentionSearch(null);
     commentInputRef.current.focus();
-    commentInputRef.current.selectionStart = commentInputRef.current.selectionEnd = index + 1 + username.length;
+    commentInputRef.current.selectionStart = commentInputRef.current.selectionEnd = index + 1 + user.username.length;
   };
 
   const handleReplyClick = (comment: Comment) => {
