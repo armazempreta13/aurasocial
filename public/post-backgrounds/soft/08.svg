@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFF1FA"/>
+      <stop offset="1" stop-color="#F2EEFF"/>
+    </linearGradient>
+    <radialGradient id="glowTR" cx="0.85" cy="0.20" r="0.95">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.70"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowBL" cx="0.12" cy="0.88" r="0.95">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="1200" fill="url(#bg)"/>
+  <rect width="1200" height="1200" fill="url(#glowTR)" opacity="0.25"/>
+  <rect width="1200" height="1200" fill="url(#glowBL)" opacity="0.18"/>
+
+  <!-- Bottom-right arcs -->
+  <g fill="none" stroke="#8B5CF6" stroke-opacity="0.18" stroke-width="2">
+    <path d="M 780 1136 A 356 356 0 0 0 1136 780" />
+    <path d="M 740 1112 A 396 396 0 0 0 1112 740" />
+  </g>
+  <circle cx="1018" cy="892" r="4" fill="#8B5CF6" fill-opacity="0.18"/>
+
+  <!-- Dot grid (top-left, smaller) -->
+  <g fill="#8B5CF6" fill-opacity="0.14">
+    <circle cx="150" cy="160" r="2"/>
+    <circle cx="178" cy="160" r="2"/>
+    <circle cx="206" cy="160" r="2"/>
+    <circle cx="234" cy="160" r="2"/>
+
+    <circle cx="150" cy="188" r="2"/>
+    <circle cx="178" cy="188" r="2"/>
+    <circle cx="206" cy="188" r="2"/>
+    <circle cx="234" cy="188" r="2"/>
+
+    <circle cx="150" cy="216" r="2"/>
+    <circle cx="178" cy="216" r="2"/>
+    <circle cx="206" cy="216" r="2"/>
+    <circle cx="234" cy="216" r="2"/>
+  </g>
+
+  <!-- Center watermark -->
+  <g opacity="0.08">
+    <circle cx="600" cy="600" r="190" fill="#FFFFFF"/>
+    <text x="600" y="675" text-anchor="middle" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="260" font-weight="900" fill="#6D28D9">A</text>
+  </g>
+</svg>
+

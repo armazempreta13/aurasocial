@@ -5,7 +5,6 @@ import { useAppStore } from '@/lib/store';
 import { db, auth } from '@/firebase';
 import { sendEmailVerification } from 'firebase/auth';
 import { doc, updateDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
-
 import { Check, Camera, Sparkles, ArrowRight, LogOut, Mail, Smartphone } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { uploadImage } from '@/lib/image-utils';

@@ -21,15 +21,24 @@ export default function FeedPage() {
   const isAuthReady = useAppStore((state) => state.isAuthReady);
 
   useEffect(() => {
-    if (isAuthReady && !user) {
-      router.replace('/?auth=login');
+    if (isAuthReady) {
+      if (!user) {
+        router.replace('/'); // Redireciona para landing page se não estiver logado
+      }
     }
-  }, [isAuthReady, router, user]);
+  }, [isAuthReady, user, router]);
 
-  if (!isAuthReady || !user) {
+  // Enquanto está carregando a autenticação, mostra loading
+  if (!isAuthReady) {
     return <AuthTransitionScreen />;
   }
 
+  // Se não está logado, redireciona (enquanto o useEffect não completa)
+  if (!user) {
+    return <AuthTransitionScreen />;
+  }
+
+  // Se o usuário está logado mas não completou o onboarding, mostra o OnboardingFlow
   if (profile && profile.onboardingCompleted === false) {
     return <OnboardingFlow />;
   }

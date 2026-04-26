@@ -77,6 +77,7 @@ const FLOATING_LIMIT = 2;
 // Provider
 // ─────────────────────────────────────────────────────────────────────────────
 export function ChatProvider({ children }: { children: React.ReactNode }) {
+  const user = useAppStore((s) => s.user);
   const profile = useAppStore((s) => s.profile);
   const { sendSignal } = useSignaling();
 
@@ -749,7 +750,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   return (
     <ChatContext.Provider value={contextValue}>
       {children}
-      {profile?.uid && <ChatOverlay />}
+      {user && <ChatOverlay />}
     </ChatContext.Provider>
   );
 }
@@ -853,7 +854,7 @@ function ChatOverlay() {
   return (
     <>
       {/* ── Floating chat windows ──────────────────────────────────────────── */}
-      <div className="pointer-events-none fixed bottom-0 right-[72px] z-[90] flex max-w-[100vw] items-end gap-3 p-4">
+      <div className="pointer-events-none fixed bottom-0 right-[72px] z-[90] hidden max-w-[100vw] items-end gap-3 p-4 md:flex">
         <AnimatePresence mode="popLayout">
           {floatingChats.map((chat) => {
             const isOnline = chat.otherUser?.status === 'online';
@@ -975,7 +976,7 @@ function ChatOverlay() {
         </AnimatePresence>
       </div>
 
-      <div className="pointer-events-none fixed bottom-6 right-[80px] z-[80] hidden flex-col items-end gap-3 md:flex">
+      <div className="pointer-events-none fixed bottom-6 right-6 z-[80] hidden flex-col items-end gap-3 md:flex">
         <AnimatePresence mode="popLayout">
           {minimizedChats.map((chat) => {
             const isOnline = chat.otherUser?.status === 'online';
@@ -993,66 +994,57 @@ function ChatOverlay() {
                 initial={{ opacity: 0, x: 20, scale: 0.9 }}
                 animate={{ opacity: 1, x: 0, scale: 1 }}
                 exit={{ opacity: 0, x: 20, scale: 0.9 }}
-                whileHover={{ scale: 1.02, y: -2 }}
+                whileHover={{ scale: 1.03, y: -2 }}
                 whileTap={{ scale: 0.97 }}
                 onClick={() => restoreFloatingChat(chat.id)}
-                className="pointer-events-auto group relative flex items-center gap-4 rounded-[22px] border border-white/40 bg-white/80 p-3.5 shadow-[0_12px_40px_rgba(0,0,0,0.08)] backdrop-blur-xl transition-shadow hover:shadow-[0_20px_50px_rgba(0,0,0,0.12)]"
+                className="pointer-events-auto group relative flex flex-col items-center"
+                title="Abrir conversa"
               >
-                {/* Avatar section */}
-                <div className="relative flex-shrink-0">
-                  <div className="relative h-12 w-12 overflow-hidden rounded-[16px] bg-gradient-to-br from-indigo-50 to-slate-100 shadow-sm ring-1 ring-black/5">
+                <div className="relative">
+                  <div className="relative h-14 w-14 overflow-hidden rounded-full bg-muted shadow-sm ring-1 ring-black/5 transition-transform duration-300 group-hover:scale-[1.03]">
                     {chat.otherUser?.photoURL ? (
                       <img
                         src={chat.otherUser.photoURL}
                         alt={chat.otherUser.displayName}
-                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                        className="h-full w-full object-cover"
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-indigo-500 to-purple-600 text-[14px] font-bold text-white">
                         {initials}
                       </div>
                     )}
-                    
-                    {/* Subtle inner glow */}
-                    <div className="pointer-events-none absolute inset-0 rounded-[16px] ring-1 ring-inset ring-white/20" />
+                    <div className="pointer-events-none absolute inset-0 rounded-full ring-1 ring-inset ring-white/20" />
                   </div>
 
-                  {/* Status indicator integrated into avatar */}
-                  <div className="absolute -bottom-1 -right-1 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-white shadow-sm">
+                  {/* Online status */}
+                  <div className="absolute bottom-0 right-0 flex h-5 w-5 items-center justify-center rounded-full bg-background shadow-sm ring-1 ring-black/5">
                     <div
-                      className={`h-2.5 w-2.5 rounded-full ring-1 ring-black/5 ${
-                        isOnline ? 'bg-emerald-500' : 'bg-slate-300'
-                      } ${isOnline ? 'animate-[pulse_2s_infinite]' : ''}`}
+                      className={`h-3 w-3 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-slate-300'} ${
+                        isOnline ? 'animate-[pulse_2s_infinite]' : ''
+                      }`}
                     />
                   </div>
-                </div>
 
-                {/* Text content with clear hierarchy */}
-                <div className="flex flex-col pr-2 text-left">
-                  <span className="text-[14.5px] font-bold tracking-tight text-slate-900">
-                    {chat.otherUser?.displayName}
-                  </span>
-                  <span className="max-w-[150px] truncate text-[12px] font-medium text-slate-500/80">
-                    {chat.lastMessage || 'Nova mensagem'}
-                  </span>
+                  {/* Unread badge */}
+                  {chat.unreadCount > 0 && (
+                    <div className="absolute -top-1 -right-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-black tracking-tighter text-white shadow-[0_2px_10px_rgba(79,70,229,0.3)]">
+                      {chat.unreadCount > 9 ? '9+' : chat.unreadCount}
+                    </div>
+                  )}
                 </div>
-
-                {/* Unread badge (compact & refined) */}
-                {chat.unreadCount > 0 && (
-                  <div className="flex h-5.5 min-w-[22px] items-center justify-center rounded-full bg-indigo-600 px-1.5 text-[10px] font-black tracking-tighter text-white shadow-[0_2px_10px_rgba(79,70,229,0.3)]">
-                    {chat.unreadCount > 9 ? '9+' : chat.unreadCount}
-                  </div>
-                )}
-                
-                {/* Premium Glow effect on hover */}
-                <div className="absolute inset-0 -z-10 rounded-[22px] bg-indigo-400/5 opacity-0 blur-xl transition-opacity group-hover:opacity-100" />
               </motion.button>
             );
           })}
         </AnimatePresence>
+
+        {/* Botao de nova mensagem alinhado com as bubbles minimizadas */}
+        <NewMessageFloatingButton fixed={false} variant="bubble" />
       </div>
 
-      <NewMessageFloatingButton />
+      {/* No mobile, mantem o botao fixo no canto */}
+      <div className="md:hidden">
+        <NewMessageFloatingButton variant="bubble" />
+      </div>
     </>
   );
 }

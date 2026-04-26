@@ -17,14 +17,23 @@
 }
 
 @layer base {
+  html, body {
+    overflow-x: hidden;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
+  }
+
+  img, video {
+    max-width: 100%;
+    height: auto;
   }
 }
 
 @layer components {
   .aura-container {
-    @apply w-full max-w-[1440px] mx-auto px-4;
+    @apply w-full max-w-[1440px] mx-auto px-3 sm:px-4;
   }
 
   .aura-panel {
@@ -62,6 +71,12 @@
 
   .aura-link {
     @apply text-primary hover:underline;
+  }
+}
+
+@layer utilities {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }
 

@@ -47,7 +47,7 @@ export function NewMessageModal({ isOpen, onClose }: NewMessageModalProps) {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 15, scale: 0.95 }}
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-          className="absolute bottom-16 right-0 mb-2 flex h-[500px] w-[340px] flex-col overflow-hidden rounded-[28px] border border-slate-100 bg-white text-slate-900 shadow-[0_24px_80px_rgba(15,23,42,0.18)]"
+          className="fixed left-3 right-3 bottom-[76px] mb-2 flex h-[70vh] max-h-[520px] flex-col overflow-hidden rounded-[28px] border border-slate-100 bg-white text-slate-900 shadow-[0_24px_80px_rgba(15,23,42,0.18)] md:absolute md:left-auto md:right-0 md:bottom-16 md:h-[500px] md:w-[340px]"
         >
           {/* Header */}
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">

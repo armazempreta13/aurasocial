@@ -82,6 +82,7 @@ export default function CommunityAdminGeneralPage() {
         name: data.name,
         description: data.description,
         type: data.type,
+        isOfficial: !!data.isOfficial,
         image: data.image || '',
         coverURL: data.coverURL || '',
         themeColor: normalizeThemeColor(data.themeColor),
@@ -120,6 +121,26 @@ export default function CommunityAdminGeneralPage() {
       </div>
 
       <div className="space-y-8 rounded-3xl border border-border/50 bg-white p-8 shadow-sm">
+        <div className="rounded-2xl border border-border/50 bg-muted/20 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-bold text-foreground">Verificação</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Marque como oficial para permitir filtros/administração. O badge público pode ser limitado a comunidades específicas.
+              </p>
+            </div>
+            <label className="flex items-center gap-3 rounded-xl bg-white px-4 py-3 shadow-sm border border-border/50">
+              <input
+                type="checkbox"
+                checked={!!data.isOfficial}
+                onChange={(e) => setData((current: any) => ({ ...current, isOfficial: e.target.checked }))}
+                className="h-5 w-5 accent-primary"
+              />
+              <span className="text-sm font-bold text-foreground">Oficial</span>
+            </label>
+          </div>
+        </div>
+
         <div>
           <h3 className="mb-4 text-lg font-bold text-foreground">Aparência</h3>
           <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">

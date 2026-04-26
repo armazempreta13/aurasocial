@@ -9,6 +9,7 @@ import { useAppStore } from '@/lib/store';
 import { motion, AnimatePresence } from 'motion/react';
 import { uploadImage } from '@/lib/image-utils';
 import { useChat } from './ChatProvider';
+import { GifPicker } from '@/components/GifPicker';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -149,7 +150,10 @@ export function ChatConversation({
   // Pending image for description before sending
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingPreview, setPendingPreview] = useState<string | null>(null);
+  const [pendingGifUrl, setPendingGifUrl] = useState<string | null>(null);
+  const [pendingGifPreview, setPendingGifPreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [showGifPicker, setShowGifPicker] = useState(false);
 
   const { sendMessage } = useChat();
 
@@ -212,6 +216,9 @@ export function ChatConversation({
       const localUrl = URL.createObjectURL(file);
       setPendingFile(file);
       setPendingPreview(localUrl);
+      setPendingGifUrl(null);
+      setPendingGifPreview(null);
+      setShowGifPicker(false);
       e.target.value = '';
     },
     [],
@@ -220,9 +227,23 @@ export function ChatConversation({
   // ── Unified Send Handler (handles text + image) ────────────────────────────
   const handleSendClick = useCallback(async () => {
     const textContent = activeValue.trim();
-    const hasImage = !!pendingFile;
+    const hasImage = !!pendingFile || !!pendingGifUrl;
     
     if (!textContent && !hasImage) return;
+
+    if (pendingGifUrl) {
+      try {
+        await sendMessage(chat.id, textContent, 'image', pendingGifUrl);
+        setPendingGifUrl(null);
+        setPendingGifPreview(null);
+        setShowGifPicker(false);
+        activeOnChange?.('');
+      } catch (err: any) {
+        console.error('Error sending GIF message:', err);
+        alert(`Falha ao enviar GIF: ${err.message || 'Erro desconhecido'}`);
+      }
+      return;
+    }
 
     if (hasImage && pendingFile) {
       setIsUploading(true);
@@ -253,7 +274,7 @@ export function ChatConversation({
         activeOnChange?.('');
       }
     }
-  }, [activeValue, pendingFile, pendingPreview, chat?.id, sendMessage, activeOnChange]);
+  }, [activeValue, pendingFile, pendingPreview, pendingGifUrl, chat?.id, sendMessage, activeOnChange]);
 
   // ── Keyboard send ──────────────────────────────────────────────────────────
   const handleKeyDown = useCallback(
@@ -499,23 +520,42 @@ export function ChatConversation({
       </div>
 
       {/* ── COMPOSER ── */}
-      <footer className="shrink-0 border-t border-[#e4e8f2] bg-white p-4">
-        {pendingPreview && (
+      <footer className="shrink-0 border-t border-[#e4e8f2] bg-white p-4 pb-safe">
+        {(pendingPreview || pendingGifPreview) && (
           <div className="mb-3 relative w-20 h-20 rounded-2xl overflow-hidden border border-[#e4e8f2] group animate-in fade-in duration-200">
-            <img src={pendingPreview} className="w-full h-full object-cover" alt="Preview" />
+            <img src={pendingPreview || pendingGifPreview || ''} className="w-full h-full object-contain bg-white" alt="Preview" />
             <button
               type="button"
               onClick={() => {
                 setPendingFile(null);
+                setPendingGifUrl(null);
+                setPendingGifPreview(null);
+                setShowGifPicker(false);
                 if (pendingPreview) URL.revokeObjectURL(pendingPreview);
                 setPendingPreview(null);
               }}
               className="absolute top-1 right-1 w-5 h-5 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center transition-colors"
-              title="Remover imagem"
+              title={pendingGifPreview ? 'Remover GIF' : 'Remover imagem'}
             >
               <X size={12} strokeWidth={2.5} />
             </button>
           </div>
+        )}
+
+        <div className="relative">
+        {showGifPicker && (
+          <GifPicker
+            variant="light"
+            onSelect={(url, previewUrl) => {
+              setPendingGifUrl(url);
+              setPendingGifPreview(previewUrl);
+              setPendingFile(null);
+              if (pendingPreview) URL.revokeObjectURL(pendingPreview);
+              setPendingPreview(null);
+              setShowGifPicker(false);
+            }}
+            onClose={() => setShowGifPicker(false)}
+          />
         )}
 
         <div className="focus-within:border-[#b5aef0] group flex items-center gap-3 rounded-full border border-[#e4e8f2] bg-[#f4f6fb] px-4 py-1.5 transition-colors">
@@ -526,6 +566,15 @@ export function ChatConversation({
             title="Enviar imagem"
           >
             <Paperclip size={20} strokeWidth={2.5} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowGifPicker((v) => !v)}
+            className={`h-8 px-2 border rounded-lg text-[11px] font-black transition-all uppercase ${showGifPicker || pendingGifUrl ? 'border-[#7c6fcd] text-[#7c6fcd] bg-white' : 'border-[#e4e8f2] text-[#8a93ad] hover:bg-white'}`}
+            title="Adicionar GIF"
+          >
+            GIF
           </button>
 
           <input
@@ -540,7 +589,7 @@ export function ChatConversation({
           <button
             type="button"
             onClick={handleSendClick}
-            disabled={isUploading || (!activeValue.trim() && !pendingFile)}
+            disabled={isUploading || (!activeValue.trim() && !pendingFile && !pendingGifUrl)}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#7c6fcd] text-white shadow-none transition-all hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
             title="Enviar"
           >
@@ -550,6 +599,7 @@ export function ChatConversation({
               <Send size={18} fill="currentColor" className="ml-0.5" />
             )}
           </button>
+        </div>
         </div>
 
         {/* ✅ FIX: accept only images; reset handled in handleFileChange */}

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useRouter } from 'next/navigation';
-import { Home, Search, Bell, Mail, Bookmark, User, Users, MoreHorizontal, Pencil } from 'lucide-react';
+import { Home, Search, Bell, Mail, Bookmark, User, Users, MoreHorizontal } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { subscribeToNotifications } from '@/lib/notifications';
 import { useChat } from '@/components/chat/ChatProvider';
@@ -31,14 +31,14 @@ export function Sidebar() {
 
   const navItems = useMemo(() => {
     return [
-      { href: '/feed', label: 'Home', icon: Home },
-      { href: '/explore', label: 'Explore', icon: Search },
-      { href: '/communities', label: 'Communities', icon: Users },
-      { href: '/notifications', label: 'Notifications', icon: Bell, badge: unreadNotifs },
-      { href: '/messages', label: 'Messages', icon: Mail, badge: unreadTotal },
-      { href: '/bookmarks', label: 'Bookmarks', icon: Bookmark },
-      { href: '/profile', label: 'Profile', icon: User },
-      { href: '/settings', label: 'More', icon: MoreHorizontal },
+      { href: '/feed', label: 'Início', icon: Home },
+      { href: '/explore', label: 'Explorar', icon: Search },
+      { href: '/communities', label: 'Comunidades', icon: Users },
+      { href: '/notifications', label: 'Notificações', icon: Bell, badge: unreadNotifs },
+      { href: '/messages', label: 'Mensagens', icon: Mail, badge: unreadTotal },
+      { href: '/bookmarks', label: 'Salvos', icon: Bookmark },
+      { href: '/profile', label: 'Perfil', icon: User },
+      { href: '/settings', label: 'Mais', icon: MoreHorizontal },
     ] as Array<{ href: string; label: string; icon: any; badge?: number }>;
   }, [unreadNotifs, unreadTotal]);
 
@@ -69,24 +69,7 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="px-2 mt-6">
-        <button
-          type="button"
-          onClick={() => {
-            if (typeof window === 'undefined') return;
-            if (pathname !== '/feed') {
-              router.push('/feed?compose=1');
-              return;
-            }
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            setTimeout(() => document.getElementById('create-post-textarea')?.focus(), 250);
-          }}
-          className="aura-btn-primary w-full h-[46px] rounded-full text-[15px] font-medium flex items-center justify-center gap-2"
-        >
-          <Pencil className="w-4 h-4" />
-          Create Post
-        </button>
-      </div>
+
 
       {/* Footer user card removed (TopNav already covers profile access) */}
     </div>

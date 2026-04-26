@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { collection, limit, onSnapshot, query } from 'firebase/firestore';
+import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
 
 import { db } from '@/firebase';
+import { OFFICIAL_COMMUNITY_NAMES, isOfficialCommunity } from '@/lib/community-official';
 
 function initials(name: string) {
   const clean = String(name || '').trim();
@@ -16,7 +17,11 @@ export function CommunitiesInviteCard() {
   const [items, setItems] = useState<any[]>([]);
 
   useEffect(() => {
-    const q = query(collection(db, 'communities'), limit(3));
+    const q = query(
+      collection(db, 'communities'),
+      where('name', 'in', [...OFFICIAL_COMMUNITY_NAMES]),
+      limit(3),
+    );
     return onSnapshot(
       q,
       (snap) => setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
@@ -24,7 +29,7 @@ export function CommunitiesInviteCard() {
     );
   }, []);
 
-  const preview = useMemo(() => items.slice(0, 3), [items]);
+  const preview = useMemo(() => items.filter(isOfficialCommunity).slice(0, 1), [items]);
 
   return (
     <div className="bg-[#f3efff] rounded-[24px] p-6 relative overflow-hidden group">
@@ -71,4 +76,3 @@ export function CommunitiesInviteCard() {
     </div>
   );
 }
-

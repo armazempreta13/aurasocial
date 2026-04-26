@@ -120,6 +120,7 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
   const [showMenu, setShowMenu] = useState(false);
   const [replyingTo, setReplyingTo] = useState<{id: string, name: string} | null>(null);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const [initialLightboxIndex, setInitialLightboxIndex] = useState(0);
   const [isSharing, setIsSharing] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -1129,7 +1130,7 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
   return (
     <div
       ref={viewRef} 
-      className="bg-white rounded-[2rem] shadow-sm mb-6 border border-slate-100/60 overflow-hidden transition-all duration-700 hover:shadow-2xl hover:shadow-slate-200/40 group/card active:scale-[0.998] relative"
+      className="bg-white rounded-[2rem] shadow-sm mb-6 border border-slate-100/60 overflow-visible transition-all duration-700 hover:shadow-2xl hover:shadow-slate-200/40 group/card active:scale-[0.998] relative"
       style={{ contentVisibility: 'auto', containIntrinsicSize: '800px' }}
     >
       {/* Dynamic Animated Border Glow */}
@@ -1273,8 +1274,36 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
           onClick={() => router.push(`/post/${post.id}`)}
         >
           {post.content && (
-            <div className="text-[17px] text-slate-900 mb-4 leading-relaxed font-medium tracking-tight px-0.5 group-hover/content:text-black transition-colors">
-              {renderTextWithLinks(displayContent)}
+            <div 
+              className={`transition-all duration-500 ease-out ${
+                post.background 
+                  ? `rounded-[32px] p-10 mb-4 flex items-center justify-center min-h-[340px] shadow-2xl overflow-hidden relative group/bg`
+                  : 'text-[17px] text-slate-900 mb-4 leading-relaxed font-medium tracking-tight px-0.5 group-hover/content:text-black transition-colors'
+              }`}
+              style={post.background ? { 
+                background: post.background.value,
+                backgroundSize: 'cover'
+              } : {}}
+            >
+              {post.background && (
+                <>
+                  <div className="absolute inset-0 bg-black/5 pointer-events-none" />
+                  {/* Subtle grid pattern for feed consistency */}
+                  <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+                </>
+              )}
+              
+              <div className={`${post.background ? `relative z-10 text-${post.background.alignment || 'center'} text-[clamp(20px,4vw,32px)] font-black leading-[1.1] tracking-tight max-w-[95%] drop-shadow-md ${
+                post.background.font === 'serif' ? 'font-serif' : post.background.font === 'mono' ? 'font-mono' : 'font-sans'
+              } ${
+                post.background.glow ? 'drop-shadow-[0_0_8px_rgba(255,255,255,0.5)]' : ''
+              } ${post.background.textColor === 'white' ? 'text-white' : 'text-slate-900'}` : ''}`}>
+                {renderTextWithLinks(displayContent)}
+              </div>
+
+              {post.background && (
+                <div className="absolute inset-0 bg-black/0 group-hover/bg:bg-black/5 transition-colors duration-700" />
+              )}
             </div>
           )}
         </div>
@@ -1429,8 +1458,12 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
             </div>
 
             {sharedPost.imageUrl && (
-              <div className="mt-4 rounded-[28px] overflow-hidden border border-slate-100 shadow-2xl shadow-black/5 group-hover/shared:scale-[1.01] transition-transform duration-700">
-                <img src={sharedPost.imageUrl} alt="Shared content" className="w-full max-h-[380px] object-cover" />
+              <div className="mt-4 rounded-[28px] overflow-hidden border border-slate-100 shadow-2xl shadow-black/5 bg-slate-100 p-2 flex items-center justify-center group-hover/shared:scale-[1.01] transition-transform duration-700">
+                <img
+                  src={sharedPost.imageUrl}
+                  alt={sharedPost.imageAlt || "Shared content"}
+                  className="block w-auto h-auto max-w-full max-h-[380px] object-contain rounded-2xl bg-white ring-1 ring-slate-200/70"
+                />
               </div>
             )}
 
@@ -1488,34 +1521,86 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
         )}
       </div>
       
-      {post.imageUrl && (
-        <div 
-          className="w-full bg-slate-100 cursor-pointer overflow-hidden group relative min-h-[200px]"
-          onClick={() => setIsLightboxOpen(true)}
-          onDoubleClick={handleDoubleClick}
+      {(post.imageUrls?.length > 0 || post.imageUrl) && (
+        <div
+          className={`w-full bg-slate-100 overflow-hidden group relative ${
+            post.imageUrls?.length > 1 ? 'grid grid-cols-2 gap-2 p-2 sm:p-3' : 'flex min-h-[200px] items-center justify-center p-2 sm:p-3'
+          }`}
         >
-          {!imageLoaded && (
-            <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-slate-100 to-slate-200" />
-          )}
-          <img 
-            src={post.imageUrl} 
-            alt="Post content" 
-            loading="lazy"
-            decoding="async"
-            onLoad={() => setImageLoaded(true)}
-            className={`w-full object-cover max-h-[540px] group-hover:scale-[1.02] transition-all duration-700 ease-out ${imageLoaded ? 'opacity-100' : 'opacity-0 scale-95'}`} 
-          />
-          
-          {showHeartOverlay && (
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-              <div className="animate-in zoom-in fade-in out-zoom-out out-fade-out fill-mode-forwards duration-700">
-                <Heart className="w-24 h-24 text-white fill-white drop-shadow-2xl opacity-90" />
-              </div>
+          {(!post.imageUrls?.length && post.imageUrl) ? (
+            <div
+              className="cursor-pointer group relative w-full flex items-center justify-center"
+              onClick={() => {
+                setInitialLightboxIndex(0);
+                setIsLightboxOpen(true);
+              }}
+              onDoubleClick={handleDoubleClick}
+            >
+              {!imageLoaded && (
+                <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-slate-100 to-slate-200" />
+              )}
+              <img
+                src={post.imageUrl}
+                alt={post.imageAlt || "Post content"}
+                loading="lazy"
+                decoding="async"
+                onLoad={() => setImageLoaded(true)}
+                className={`block w-auto h-auto max-w-full max-h-[540px] object-contain rounded-2xl bg-white ring-1 ring-slate-200/70 transition-opacity duration-500 ease-out ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+              />
+              {showHeartOverlay && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                  <div className="animate-in zoom-in fade-in out-zoom-out out-fade-out fill-mode-forwards duration-700">
+                    <Heart className="w-24 h-24 text-white fill-white drop-shadow-2xl opacity-90" />
+                  </div>
+                </div>
+              )}
             </div>
+          ) : (
+            post.imageUrls?.map((url: string, index: number) => {
+              if (index > 3) return null; // Show max 4 preview images
+              const count = post.imageUrls.length;
+              const isLastVisible = index === 3 && post.imageUrls.length > 4;
+              const tileAspectClass =
+                count === 4 ? 'aspect-square' :
+                count === 2 ? 'aspect-[4/3]' :
+                count === 3 && index === 0 ? 'aspect-[16/9]' :
+                'aspect-[4/3]';
+              const spanClass = count === 3 && index === 0 ? 'col-span-2' : '';
+              return (
+                <div
+                  key={index}
+                  className={`cursor-pointer group/img relative w-full ${spanClass} ${tileAspectClass} rounded-2xl bg-white ring-1 ring-slate-200/70 overflow-hidden flex items-center justify-center`}
+                  onClick={() => {
+                    setInitialLightboxIndex(index);
+                    setIsLightboxOpen(true);
+                  }}
+                  onDoubleClick={handleDoubleClick}
+                >
+                  <img
+                    src={url}
+                    alt={`Post content ${index + 1}`}
+                    loading="lazy"
+                    decoding="async"
+                    className="block w-auto h-auto max-w-full max-h-full object-contain"
+                  />
+                  {isLastVisible && (
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none">
+                      <span className="text-white text-2xl font-black">+{post.imageUrls.length - 4}</span>
+                    </div>
+                  )}
+                  {showHeartOverlay && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                      <div className="animate-in zoom-in fade-in out-zoom-out out-fade-out fill-mode-forwards duration-700">
+                        <Heart className="w-16 h-16 text-white fill-white drop-shadow-2xl opacity-90" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
       )}
-
       {post.video && post.video.provider === 'youtube' ? (
         <div className="w-full bg-slate-100 overflow-hidden group relative aspect-video">
           {post.video.status === 'processing' ? (
@@ -1569,18 +1654,14 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
       )}
 
       {isLightboxOpen && (
-        <Lightbox 
+        <Lightbox
           isOpen={isLightboxOpen}
           onClose={() => setIsLightboxOpen(false)}
-          imageUrl={post.imageUrl}
-          authorName={post.authorName}
-          authorPhoto={post.authorPhoto}
-          content={post.content}
-          likesCount={post.likesCount}
-          commentsCount={post.commentsCount}
+          imageUrls={post.imageUrls?.length > 0 ? post.imageUrls : (post.imageUrl ? [post.imageUrl] : [])}
+          initialIndex={initialLightboxIndex}
+          postId={post.id}
         />
       )}
-
       <div className="px-5 py-2">
         <div className="flex justify-between items-center py-3 border-t border-slate-100">
           <div className="flex items-center gap-3">
@@ -1650,7 +1731,7 @@ export const PostCard = memo(function PostCard({ post: initialPost, isPinned }: 
                     initial={{ opacity: 0, y: 10, scale: 0.9 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.9 }}
-                    className="absolute bottom-full left-0 mb-2 bg-white rounded-[32px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-slate-100 p-2 flex gap-1 z-50 pointer-events-auto"
+                    className="absolute bottom-full left-0 mb-2 bg-white rounded-[32px] shadow-[0_8px_30px_rgb(0,0,0,0.12)] border border-slate-100 p-2 flex gap-1 z-[200] pointer-events-auto"
                     onMouseEnter={handleReactionMouseEnter}
                     onMouseLeave={handleReactionMouseLeave}
                   >

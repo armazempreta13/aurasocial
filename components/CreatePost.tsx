@@ -1,18 +1,20 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image as ImageIcon, Smile, X, BarChart3, Plus, Trash2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Image as ImageIcon, Smile, X, BarChart3, Plus, Trash2, Pencil, Type, Sparkles } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-
 import { useAppStore } from '@/lib/store';
 import { db } from '@/firebase';
+import { ImageEditor } from './ImageEditor';
 import { extractHashtags } from '@/lib/hashtags';
 import { validateContent } from '@/lib/moderation/utils';
 import { uploadImage } from '@/lib/image-utils';
-
 import { MentionSuggestions } from './MentionSuggestions';
 import { HashtagSuggestions } from './HashtagSuggestions';
+import { POST_BACKGROUNDS, type BackgroundOption } from '@/lib/post-backgrounds';
+import { GifPicker } from './GifPicker';
 
 type CreatePostProps = {
   communityId?: string;
@@ -27,27 +29,27 @@ const DEFAULT_TAG_SUGGESTIONS = ['vida', 'inspiração', 'tecnologia', 'fotograf
 // Emoji Picker (simple native grid)
 // ─────────────────────────────────────────────────────────────────────────────
 const EMOJI_LIST = [
-  '😀','😂','🥲','😍','🤩','😎','🥳','🤔','😮','😢','😡','🥺',
-  '👍','👎','❤️','🔥','✨','🎉','💯','💪','🙏','👏','🫶','🤝',
-  '😊','🤗','😴','🤯','🫠','🥴','😏','🤭','🫡','😇','🤓','🫢',
-  '🌟','⚡','🎯','🚀','💡','🎨','🌈','🌊','🍀','🌸','💎','👑',
+  '😀', '😂', '🥲', '😍', '🤩', '😎', '🥳', '🤔', '😮', '😢', '😡', '🥺',
+  '👍', '👎', '❤️', '🔥', '✨', '🎉', '💯', '💪', '🙏', '👏', '🫶', '🤝',
+  '😊', '🤗', '😴', '🤯', '🫠', '🥴', '😏', '🤭', '🫡', '😇', '🤓', '🫢',
+  '🌟', '⚡', '🎯', '🚀', '💡', '🎨', '🌈', '🌊', '🍀', '🌸', '💎', '👑',
 ];
 
 function EmojiPicker({ onSelect, onClose }: { onSelect: (e: string) => void; onClose: () => void }) {
   return (
-    <div className="absolute bottom-full right-0 mb-2 z-50 bg-white rounded-2xl shadow-2xl border border-slate-100 p-3 w-[240px]">
-      <div className="flex justify-between items-center mb-2">
+    <div className="absolute top-full left-0 mt-2 z-[100] bg-[#1a1a1f] rounded-2xl shadow-2xl border border-white/10 p-4 w-[260px] animate-in fade-in slide-in-from-top-2 duration-200 backdrop-blur-xl">
+      <div className="flex justify-between items-center mb-3">
         <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Emojis</span>
-        <button onClick={onClose} className="text-slate-300 hover:text-slate-500 transition-colors">
+        <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors p-1 hover:bg-white/5 rounded-lg">
           <X size={14} />
         </button>
       </div>
-      <div className="grid grid-cols-8 gap-1">
+      <div className="grid grid-cols-8 gap-2">
         {EMOJI_LIST.map((emoji) => (
           <button
             key={emoji}
             onClick={() => onSelect(emoji)}
-            className="text-xl hover:scale-125 transition-transform rounded p-0.5"
+            className="text-lg hover:scale-125 hover:bg-white/10 transition-all rounded-lg p-2 active:scale-90"
           >
             {emoji}
           </button>
@@ -60,85 +62,7 @@ function EmojiPicker({ onSelect, onClose }: { onSelect: (e: string) => void; onC
 // ─────────────────────────────────────────────────────────────────────────────
 // GIF Picker (Giphy via public beta key / Tenor fallback)
 // ─────────────────────────────────────────────────────────────────────────────
-const GIPHY_KEY = process.env.NEXT_PUBLIC_GIPHY_API_KEY || 'dc6zaTOxFJmzC'; // public demo key
 
-function GifPicker({ onSelect, onClose }: { onSelect: (url: string, previewUrl: string) => void; onClose: () => void }) {
-  const [query, setQuery] = useState('');
-  const [gifs, setGifs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const debounceRef = useRef<any>(null);
-
-  const search = useCallback(async (q: string) => {
-    setLoading(true);
-    try {
-      const endpoint = q.trim()
-        ? `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_KEY}&q=${encodeURIComponent(q)}&limit=16&rating=g`
-        : `https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_KEY}&limit=16&rating=g`;
-      const res = await fetch(endpoint);
-      const data = await res.json();
-      setGifs(data.data || []);
-    } catch {
-      setGifs([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    search('');
-  }, [search]);
-
-  const handleQueryChange = (val: string) => {
-    setQuery(val);
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => search(val), 400);
-  };
-
-  return (
-    <div className="absolute bottom-full right-0 mb-2 z-50 bg-white rounded-2xl shadow-2xl border border-slate-100 w-[280px]">
-      <div className="flex items-center justify-between px-3 pt-3 pb-2">
-        <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">GIF</span>
-        <button onClick={onClose} className="text-slate-300 hover:text-slate-500 transition-colors">
-          <X size={14} />
-        </button>
-      </div>
-      <div className="px-3 pb-2">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => handleQueryChange(e.target.value)}
-          placeholder="Buscar GIFs..."
-          autoFocus
-          className="w-full rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] outline-none placeholder:text-slate-300 focus:border-primary/40"
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-1 px-3 pb-3 max-h-[220px] overflow-y-auto">
-        {loading ? (
-          Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="aspect-video rounded-lg bg-slate-100 animate-pulse" />
-          ))
-        ) : gifs.length === 0 ? (
-          <p className="col-span-2 text-center text-[12px] text-slate-400 py-4">Nenhum GIF encontrado</p>
-        ) : (
-          gifs.map((gif: any) => {
-            const preview = gif.images?.fixed_width_small?.url || gif.images?.preview_gif?.url;
-            const full = gif.images?.downsized?.url || gif.images?.fixed_width?.url;
-            return (
-              <button
-                key={gif.id}
-                onClick={() => onSelect(full, preview)}
-                className="overflow-hidden rounded-lg hover:opacity-90 transition-opacity"
-              >
-                <img src={preview} alt={gif.title} className="w-full object-cover" loading="lazy" />
-              </button>
-            );
-          })
-        )}
-      </div>
-      <p className="text-center text-[9px] text-slate-300 pb-2">Powered by GIPHY</p>
-    </div>
-  );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Poll Editor
@@ -205,8 +129,9 @@ export function CreatePost({
   const [hashtagSearch, setHashtagSearch] = useState<{ text: string; index: number } | null>(null);
 
   // Image attachment
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [imageAlt, setImageAlt] = useState<string>('');
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   // GIF attachment
@@ -220,6 +145,18 @@ export function CreatePost({
   // Poll
   const [showPoll, setShowPoll] = useState(false);
   const [pollOptions, setPollOptions] = useState(['', '']);
+
+  // Image editing
+  const [showImageEditor, setShowImageEditor] = useState(false);
+  const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
+
+  // Background Post ("Aa")
+  const [selectedBackground, setSelectedBackground] = useState<BackgroundOption | null>(null);
+  const [hoveredBackground, setHoveredBackground] = useState<BackgroundOption | null>(null);
+  const [postAlignment, setPostAlignment] = useState<'center' | 'left' | 'right'>('center');
+  const [postFont, setPostFont] = useState<'sans' | 'serif' | 'mono'>('sans');
+  const [textGlow, setTextGlow] = useState(false);
+  const [backgroundTab, setBackgroundTab] = useState<'gradients' | 'solids' | 'soft' | 'aura' | 'textures'>('aura');
 
   const hashtags = useMemo(() => extractHashtags(content), [content]);
 
@@ -290,40 +227,129 @@ export function CreatePost({
 
   // ── Image button ────────────────────────────────────────────────────────────
   const handleImageClick = () => {
+    setSelectedBackground(null);
+    setHoveredBackground(null);
     setShowEmoji(false);
     setShowGif(false);
     fileInputRef.current?.click();
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImageFile(file);
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    if (imageFiles.length + files.length > 4) {
+      alert('Você pode enviar no máximo 4 imagens por post.');
+      return;
+    }
+    
     setGifUrl(null);
     setGifPreviewUrl(null);
-    const reader = new FileReader();
-    reader.onload = (ev) => setImagePreview(ev.target?.result as string);
-    reader.readAsDataURL(file);
+    
+    const newPreviews = [...imagePreviews];
+    const newFiles = [...imageFiles];
+    
+    files.forEach(file => {
+      newFiles.push(file);
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setImagePreviews(prev => [...prev, ev.target?.result as string]);
+      };
+      reader.readAsDataURL(file);
+    });
+    
+    setImageFiles(newFiles);
     e.target.value = '';
   };
 
-  const removeImage = () => {
-    setImageFile(null);
-    setImagePreview(null);
+  const removeImage = (index: number) => {
+    setImageFiles(prev => prev.filter((_, i) => i !== index));
+    setImagePreviews(prev => prev.filter((_, i) => i !== index));
+    if (imageFiles.length <= 1) {
+      setImageAlt('');
+    }
+  };
+
+  const handleSaveEditedImage = (blob: Blob, metadata: { alt?: string; tags?: any[] }) => {
+    if (editingImageIndex === null || !imageFiles[editingImageIndex]) return;
+    
+    const oldFile = imageFiles[editingImageIndex];
+    const file = new File([blob], oldFile.name, { type: 'image/jpeg' });
+    
+    const newFiles = [...imageFiles];
+    newFiles[editingImageIndex] = file;
+    setImageFiles(newFiles);
+
+    if (metadata.alt !== undefined) {
+      setImageAlt(metadata.alt);
+    }
+    
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const newPreviews = [...imagePreviews];
+      newPreviews[editingImageIndex] = ev.target?.result as string;
+      setImagePreviews(newPreviews);
+    };
+    reader.readAsDataURL(file);
+    
+    setShowImageEditor(false);
+    setEditingImageIndex(null);
   };
 
   // ── GIF selection ───────────────────────────────────────────────────────────
   const handleGifSelect = (url: string, previewUrl: string) => {
+    setSelectedBackground(null);
+    setHoveredBackground(null);
     setGifUrl(url);
     setGifPreviewUrl(previewUrl);
-    setImageFile(null);
-    setImagePreview(null);
+    setImageFiles([]);
+    setImagePreviews([]);
     setShowGif(false);
   };
 
   const removeGif = () => {
     setGifUrl(null);
     setGifPreviewUrl(null);
+  };
+
+  const handlePollClick = () => {
+    setSelectedBackground(null);
+    setHoveredBackground(null);
+    setShowPoll((v) => !v);
+  };
+
+  const backgroundTabs = useMemo(() => ({
+    gradients: { label: 'Gradientes', filter: (bg: BackgroundOption) => bg.type === 'gradient' || bg.type === 'premium' },
+    solids: { label: 'Sólidas', filter: (bg: BackgroundOption) => bg.type === 'solid' },
+    soft: {
+      label: 'Suaves',
+      filter: (bg: BackgroundOption) => (bg.type === 'gradient' || bg.type === 'solid' || bg.type === 'premium') && bg.textColor === 'slate-900',
+    },
+    aura: { label: 'Aura Collection', filter: (bg: BackgroundOption) => bg.type === 'aura' },
+    textures: { label: 'Texturas', filter: (_bg: BackgroundOption) => false },
+  }), []);
+
+  const visibleBackgrounds = useMemo(() => {
+    const def = backgroundTabs[backgroundTab];
+    return POST_BACKGROUNDS.filter(def.filter);
+  }, [backgroundTab, backgroundTabs]);
+
+  const handleToggleBackgroundMode = () => {
+    if (selectedBackground) {
+      setSelectedBackground(null);
+      setHoveredBackground(null);
+    } else {
+      const initial = POST_BACKGROUNDS.find((bg) => bg.type === 'aura') ?? POST_BACKGROUNDS[0];
+      setSelectedBackground(initial);
+      setBackgroundTab(initial.type === 'aura' ? 'aura' : initial.type === 'solid' ? 'solids' : 'gradients');
+      // Clear other attachments
+      setImageFiles([]);
+      setImagePreviews([]);
+      setGifUrl(null);
+      setGifPreviewUrl(null);
+      setShowPoll(false);
+    }
+    setShowEmoji(false);
+    setShowGif(false);
   };
 
   // ── Emoji insertion ─────────────────────────────────────────────────────────
@@ -353,14 +379,16 @@ export function CreatePost({
     }
   };
 
-  const hasAttachment = !!(imagePreview || gifUrl);
+  const hasAttachment = !!(imagePreviews.length > 0 || gifUrl);
   const canPost = Boolean(profile?.uid) && (Boolean(content.trim()) || hasAttachment) && !isSubmitting;
 
   const autosize = () => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = '0px';
-    const next = Math.min(120, Math.max(44, el.scrollHeight));
+    const max = selectedBackground ? 220 : 120;
+    const min = selectedBackground ? 140 : 44;
+    const next = Math.min(max, Math.max(min, el.scrollHeight));
     el.style.height = `${next}px`;
   };
 
@@ -378,17 +406,21 @@ export function CreatePost({
     setIsSubmitting(true);
     try {
       let imageUrl: string | null = null;
+      let imageUrls: string[] = [];
 
-      if (imageFile) {
+      if (imageFiles.length > 0) {
         setIsUploadingImage(true);
         try {
-          const result = await uploadImage(imageFile);
-          imageUrl = result.url;
+          const uploads = imageFiles.map(file => uploadImage(file));
+          const results = await Promise.all(uploads);
+          imageUrls = results.map(r => r.url);
+          imageUrl = imageUrls[0];
         } finally {
           setIsUploadingImage(false);
         }
       } else if (gifUrl) {
         imageUrl = gifUrl;
+        imageUrls = [gifUrl];
       }
 
       const validPollOptions = pollOptions.filter((o) => o.trim());
@@ -412,18 +444,32 @@ export function CreatePost({
         commentsCount: 0,
         sharesCount: 0,
         imageUrl,
+        imageUrls,
+        imageAlt: imageAlt || null,
         poll,
+        background: selectedBackground ? {
+          id: selectedBackground.id,
+          type: selectedBackground.type,
+          value: selectedBackground.value,
+          textColor: selectedBackground.textColor,
+          alignment: postAlignment,
+          font: postFont,
+          glow: textGlow
+        } : null,
         createdAt: serverTimestamp(),
       });
 
       setContent('');
       setMentionSearch(null);
       setHashtagSearch(null);
-      setImageFile(null);
-      setImagePreview(null);
+      setImageFiles([]);
+      setImagePreviews([]);
+      setImageAlt('');
       setGifUrl(null);
       setGifPreviewUrl(null);
       setShowPoll(false);
+      setSelectedBackground(null);
+      setHoveredBackground(null);
       setPollOptions(['', '']);
       queryClient.invalidateQueries({ queryKey: ['posts'] });
     } catch (e) {
@@ -434,195 +480,332 @@ export function CreatePost({
   };
 
   return (
-    <div className="aura-panel p-4 mb-6">
-      <div className="flex items-start gap-4">
-        <div className="w-[42px] h-[42px] rounded-full overflow-hidden shrink-0">
+    <>
+    <div className="w-full max-w-3xl mx-auto px-1 sm:px-0">
+    <div className="w-full bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-6">
+      <div className="flex gap-4">
+        {/* Avatar */}
+        <div className="w-12 h-12 rounded-full overflow-hidden shrink-0">
           {profile?.photoURL ? (
-            // eslint-disable-next-line @next/next/no-img-element
             <img src={profile.photoURL} alt="" className="w-full h-full object-cover" />
           ) : (
-            <div className="w-full h-full flex items-center justify-center bg-muted text-slate-500 font-bold">
+            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-indigo-600 to-purple-600 text-white font-bold">
               {profile?.displayName?.charAt(0).toUpperCase() || 'U'}
             </div>
           )}
         </div>
 
-        <div className="flex-1">
-          <div className="rounded-2xl border border-border bg-secondary p-3.5 flex flex-col gap-3 shadow-sm transition-all duration-200">
-            {/* 1. Input */}
-            <div className="relative w-full flex items-start">
-              <textarea
-                ref={textareaRef}
-                id="create-post-textarea"
-                value={content}
-                onChange={(e) => {
-                  handleTextChange(e);
-                  autosize();
-                }}
-                onFocus={() => autosize()}
-                placeholder={`No que você está pensando, ${profile?.displayName?.split(' ')[0] || ''}?`}
-                className="w-full min-h-[40px] max-h-[120px] resize-none overflow-hidden bg-transparent text-[14px] font-semibold text-slate-700 placeholder:text-slate-400 outline-none leading-[24px] m-0 p-1"
-                style={{ height: '40px' }}
-                onKeyDown={(e) => {
-                  const key = e.key.toLowerCase();
-                  const mod = e.metaKey || e.ctrlKey;
-                  if (key === 'escape') {
-                    setMentionSearch(null);
-                    setHashtagSearch(null);
-                    return;
-                  }
-                  if (key === 'enter' && !e.shiftKey) {
-                    if (mod) {
-                      e.preventDefault();
-                      if (canPost) void handleSubmit();
-                      return;
-                    }
-                  }
-                }}
-              />
+        {/* Input and Toolbar */}
+        <div className="flex-1 flex flex-col gap-3">
+          {/* Input */}
+          <textarea
+            ref={textareaRef}
+            id="create-post-textarea"
+            value={content}
+            onChange={(e) => {
+              handleTextChange(e);
+              autosize();
+            }}
+            onFocus={() => autosize()}
+            placeholder={`No que você está pensando, ${profile?.displayName?.split(' ')[0] || 'Usuário'}?`}
+            style={selectedBackground ? {
+              background: selectedBackground.value,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
+            } : undefined}
+            className={`w-full resize-none bg-transparent outline-none leading-relaxed transition-[box-shadow,border-color] ${selectedBackground ? `rounded-2xl border border-slate-200 shadow-sm px-5 py-4 text-lg font-semibold min-h-[140px] max-h-[220px] ${postAlignment === 'center' ? 'text-center' : postAlignment === 'right' ? 'text-right' : 'text-left'} ${postFont === 'serif' ? 'font-serif' : postFont === 'mono' ? 'font-mono' : ''} ${selectedBackground.textColor === 'white' ? 'text-white placeholder:text-white/70' : 'text-slate-900 placeholder:text-slate-900/55'}` : 'text-base text-slate-700 placeholder:text-slate-400 min-h-[24px] max-h-[120px] font-medium'}`}
+            onKeyDown={(e) => {
+              const key = e.key.toLowerCase();
+              const mod = e.metaKey || e.ctrlKey;
+              if (key === 'escape') {
+                setMentionSearch(null);
+                setHashtagSearch(null);
+                return;
+              }
+              if (key === 'enter' && !e.shiftKey) {
+                if (mod) {
+                  e.preventDefault();
+                  if (canPost) void handleSubmit();
+                  return;
+                }
+              }
+            }}
+          />
 
-              {mentionSearch?.text ? (
-                <div className="absolute left-0 top-full pt-2 z-10">
-                  <MentionSuggestions
-                    searchText={mentionSearch.text}
-                    onSelect={handleSelectMention}
-                    onClose={() => setMentionSearch(null)}
-                  />
-                </div>
-              ) : null}
-
-              {hashtagSearch?.text ? (
-                <div className="absolute left-0 top-full pt-2 z-10">
-                  <HashtagSuggestions
-                    searchText={hashtagSearch.text}
-                    suggestions={[
-                      ...DEFAULT_TAG_SUGGESTIONS,
-                      ...hashtags.map((h) => String(h || '').replace(/^#/, '')),
-                    ]}
-                    onSelect={handleSelectHashtag}
-                    onClose={() => setHashtagSearch(null)}
-                  />
-                </div>
-              ) : null}
+          {content.trim().length >= 12 && hashtags.length === 0 && !hashtagSearch && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
+              <span className="inline-flex items-center gap-1.5 font-semibold">
+                <Sparkles className="h-4 w-4 text-primary/70" />
+                Hashtags ajudam seu post a subir no Trending
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {DEFAULT_TAG_SUGGESTIONS.slice(0, 3).map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => {
+                      const next = `${content.trimEnd()}${content.trimEnd().endsWith('#') ? '' : ' '}#${tag} `;
+                      setContent(next);
+                      setTimeout(() => textareaRef.current?.focus(), 0);
+                    }}
+                    className="rounded-full border border-slate-200 bg-white px-2 py-1 font-bold text-slate-600 hover:bg-slate-50"
+                    title={`Adicionar #${tag}`}
+                  >
+                    #{tag}
+                  </button>
+                ))}
+              </div>
             </div>
+          )}
 
-            {/* 2. Attachment Preview (Integrated) */}
-            {(imagePreview || gifPreviewUrl) && (
-              <div className="relative w-full rounded-xl overflow-hidden group animate-in fade-in duration-300 border border-black/5">
-                <img
-                  src={imagePreview || gifPreviewUrl || ''}
-                  alt="Preview"
-                  className="w-full object-cover max-h-[360px]"
-                />
-                <button
-                  type="button"
-                  onClick={imagePreview ? removeImage : removeGif}
-                  className="absolute top-3 right-3 w-7 h-7 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center hover:scale-105 active:scale-95 transition-all duration-200 shadow-md"
-                  title="Remover anexo"
-                >
-                  <X size={14} strokeWidth={2.5} />
-                </button>
-                {isUploadingImage && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
-                    <div className="w-6 h-6 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 3. Poll Editor (Integrated) */}
-            {showPoll && (
-              <PollEditor
-                options={pollOptions}
-                onChange={handlePollOptionChange}
-                onRemove={() => { setShowPoll(false); setPollOptions(['', '']); }}
+          {/* Attachment Previews */}
+          {gifPreviewUrl && (
+            <div className="relative mt-3 rounded-2xl overflow-hidden border border-white/10 aspect-video bg-white/5 flex items-center justify-center">
+              <img src={gifPreviewUrl}
+                alt="Pré-visualização da imagem"
+                className="max-h-full max-w-full object-contain"
               />
-            )}
-
-            {/* 4. Ações (Toolbar + Publicar) */}
-            <div className="flex items-center justify-between pt-2 border-t border-slate-200/50">
-              <div ref={toolbarRef} className="flex items-center gap-1 px-1 relative">
-                {/* Image */}
+              <div className="absolute top-2 right-2 flex gap-2">
                 <button
                   type="button"
-                  onClick={handleImageClick}
-                  className={`w-8 h-8 flex items-center justify-center transition-all rounded-full hover:bg-slate-100 ${imagePreview ? 'text-primary bg-primary/10' : 'text-slate-400 hover:text-primary'}`}
-                  aria-label="Imagem"
-                  title="Adicionar imagem"
+                  onClick={removeGif}
+                  className="w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white transition-colors backdrop-blur-sm"
+                  aria-label="Remover GIF"
                 >
-                  <ImageIcon size={18} />
+                  <X size={16} />
                 </button>
-
-                {/* GIF */}
-                <button
-                  type="button"
-                  onClick={() => { setShowGif((v) => !v); setShowEmoji(false); }}
-                  className={`h-6 px-2 border-[1.5px] rounded text-[10px] font-black transition-all ${showGif || gifUrl ? 'border-primary text-primary bg-primary/5' : 'border-slate-200 text-slate-400 hover:text-primary hover:border-primary'}`}
-                  title="Adicionar GIF"
-                >
-                  GIF
-                </button>
-
-                {/* Poll */}
-                <button
-                  type="button"
-                  onClick={() => setShowPoll((v) => !v)}
-                  className={`w-8 h-8 flex items-center justify-center transition-all rounded-full hover:bg-slate-100 ${showPoll ? 'text-primary bg-primary/10' : 'text-slate-400 hover:text-primary'}`}
-                  aria-label="Enquete"
-                  title="Criar enquete"
-                >
-                  <BarChart3 size={17} />
-                </button>
-
-                {/* Emoji */}
-                <button
-                  type="button"
-                  onClick={() => { setShowEmoji((v) => !v); setShowGif(false); }}
-                  className={`w-8 h-8 flex items-center justify-center transition-all rounded-full hover:bg-slate-100 ${showEmoji ? 'text-primary bg-primary/10' : 'text-slate-400 hover:text-primary'}`}
-                  aria-label="Emoji"
-                  title="Adicionar emoji"
-                >
-                  <Smile size={18} />
-                </button>
-
-                {/* Emoji Picker Popover */}
-                {showEmoji && (
-                  <EmojiPicker
-                    onSelect={handleEmojiSelect}
-                    onClose={() => setShowEmoji(false)}
-                  />
-                )}
-
-                {/* GIF Picker Popover */}
-                {showGif && (
-                  <GifPicker
-                    onSelect={handleGifSelect}
-                    onClose={() => setShowGif(false)}
-                  />
-                )}
               </div>
+            </div>
+          )}
+          {imagePreviews.length > 0 && (
+            <div className="mt-3 grid gap-2" style={{ gridTemplateColumns: imagePreviews.length === 1 ? '1fr' : '1fr 1fr' }}>
+              {imagePreviews.map((preview, index) => (
+                <div key={index} className="relative rounded-2xl overflow-hidden border border-white/10 aspect-video bg-white/5 flex items-center justify-center">
+                  <img src={preview}
+                    alt={`Pré-visualização da imagem ${index + 1}`}
+                    className="max-h-full max-w-full object-contain w-full"
+                  />
+                  <div className="absolute top-2 right-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setEditingImageIndex(index); setShowImageEditor(true); }}
+                      className="w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white transition-colors backdrop-blur-sm"
+                      aria-label="Editar imagem"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeImage(index)}
+                      className="w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white transition-colors backdrop-blur-sm"
+                      aria-label="Remover imagem"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                  {isUploadingImage && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                      <div className="w-5 h-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
+          {/* Poll Editor */}
+          {showPoll && (
+            <PollEditor
+              options={pollOptions}
+              onChange={handlePollOptionChange}
+              onRemove={() => { setShowPoll(false); setPollOptions(['', '']); }}
+            />
+          )}
+
+          {/* Toolbar + Publish */}
+          <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-200">
+            <div
+              ref={toolbarRef}
+              className="flex flex-1 min-w-0 items-center gap-2 relative overflow-x-auto no-scrollbar pr-1"
+            >
+              {/* Image */}
               <button
                 type="button"
-                onClick={() => void handleSubmit()}
-                className="aura-btn-primary h-[36px] px-6 rounded-2xl text-[13px]"
-                disabled={!canPost}
-              >
-                {isSubmitting ? (isUploadingImage ? 'Enviando…' : 'Publicando…') : 'Publicar'}
+                onClick={handleImageClick}
+                className={`w-9 h-9 flex items-center justify-center rounded-lg transition-all ${imagePreviews.length > 0 ? 'text-indigo-600 bg-indigo-50 border border-indigo-200' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 border border-transparent'} border`}
+                aria-label="Imagem"
+                title="Adicionar imagem"
+              >                <ImageIcon size={18} />
               </button>
+
+              {/* GIF */}
+              <button
+                type="button"
+                onClick={() => { setShowGif((v) => !v); setShowEmoji(false); }}
+                className={`h-9 px-2 border rounded-lg text-xs font-bold transition-all ${showGif || gifUrl ? 'border-indigo-500 text-indigo-600 bg-indigo-50' : 'border-slate-300 text-slate-600 hover:bg-slate-100'}`}
+                title="Adicionar GIF"
+              >
+                GIF
+              </button>
+
+              {/* Poll */}
+              <button
+                type="button"
+                onClick={handlePollClick}
+                className={`w-9 h-9 flex items-center justify-center rounded-lg transition-all ${showPoll ? 'text-indigo-600 bg-indigo-50 border border-indigo-200' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 border border-transparent'} border`}
+                aria-label="Enquete"
+                title="Criar enquete"
+              >
+                <BarChart3 size={18} />
+              </button>
+
+              {/* Aa (Creative Studio) */}
+              <button
+                type="button"
+                onClick={handleToggleBackgroundMode}
+                className={`w-9 h-9 flex items-center justify-center rounded-lg transition-all border ${selectedBackground ? 'text-indigo-600 bg-indigo-50 border-indigo-200' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 border-transparent'}`}
+                aria-label="Aura Creative Studio"
+                title="Aura Creative Studio"
+              >
+                <Type size={18} />
+              </button>
+
+              {/* Emoji */}
+              <button
+                type="button"
+                onClick={() => { setShowEmoji((v) => !v); setShowGif(false); }}
+                className="w-9 h-9 flex items-center justify-center rounded-lg border border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"
+                aria-label="Emoji"
+                title="Adicionar emoji"
+              >
+                <Smile size={18} />
+              </button>
+
+              {/* Emoji Picker */}
+              {showEmoji && (
+                <EmojiPicker
+                  onSelect={handleEmojiSelect}
+                  onClose={() => setShowEmoji(false)}
+                />
+              )}
+
+              {/* GIF Picker */}
+              {showGif && (
+                <GifPicker
+                  variant="dark"
+                  onSelect={(url, previewUrl) => handleGifSelect(url, previewUrl)}
+                  onClose={() => setShowGif(false)}
+                />
+              )}
             </div>
+
+            {/* Publish Button */}
+            <button
+              type="button"
+              onClick={() => void handleSubmit()}
+              className="shrink-0 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed h-9 px-6 rounded-full text-sm font-bold text-white shadow-md hover:shadow-lg active:scale-95 transition-all duration-200"
+              disabled={!canPost}
+            >
+              {isSubmitting ? (isUploadingImage ? 'Enviando…' : 'Publicando…') : 'Publicar'}
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Hidden file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*,image/gif"
-        className="hidden"
-        onChange={handleFileChange}
-      />
+      {/* Background Styles Section - Only show when selected */}
+      {selectedBackground && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          className="mt-4 pt-4 border-t border-slate-200"
+        >
+          <div className="bg-white rounded-xl p-4 border border-slate-200">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-slate-900">Estilo do fundo</h3>
+              <button
+                onClick={() => { setSelectedBackground(null); setHoveredBackground(null); }}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Style Tabs */}
+            <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+              {(Object.keys(backgroundTabs) as Array<keyof typeof backgroundTabs>).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setBackgroundTab(key)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/30 ${backgroundTab === key ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+                >
+                  {backgroundTabs[key].label}
+                </button>
+              ))}
+            </div>
+
+            {/* Background Grid */}
+            {visibleBackgrounds.length > 0 ? (
+              <div className="flex gap-2 overflow-x-auto pb-2">
+                {visibleBackgrounds.map((bg) => (
+                  <button
+                    key={bg.id}
+                    type="button"
+                    onMouseEnter={() => setHoveredBackground(bg)}
+                    onMouseLeave={() => setHoveredBackground(null)}
+                    onClick={() => setSelectedBackground(bg)}
+                    className={`shrink-0 w-14 h-14 rounded-xl transition-all relative overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${selectedBackground?.id === bg.id ? 'ring-2 ring-indigo-600 scale-105' : 'border border-slate-200 hover:scale-105'}`}
+                    style={{ background: bg.value, backgroundSize: 'cover' }}
+                    title={bg.name}
+                  >
+                    {selectedBackground?.id === bg.id && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <svg className="w-5 h-5 text-white drop-shadow-lg" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-16 rounded-xl border border-dashed border-slate-200 text-xs font-semibold text-slate-500">
+                Em breve
+              </div>
+            )}
+
+            <div className="mt-2 min-h-[16px] text-[11px] font-semibold text-slate-500">
+              {hoveredBackground?.name ?? selectedBackground?.name}
+            </div>
+          </div>
+        </motion.div>
+      )}
     </div>
+    </div>
+
+    {/* Image Editor Modal */}
+    <AnimatePresence>
+      {showImageEditor && editingImageIndex !== null && imagePreviews[editingImageIndex] && (
+        <ImageEditor
+          image={imagePreviews[editingImageIndex]}
+          initialAlt={imageAlt}
+          onSave={handleSaveEditedImage}
+          onCancel={() => setShowImageEditor(false)}
+        />
+      )}
+    </AnimatePresence>
+
+    {/* Hidden file input */}
+    <input
+      ref={fileInputRef}
+      type="file"
+      multiple
+      accept="image/*,image/gif"
+      className="hidden"
+      onChange={handleFileChange}
+    />
+    </>
   );
 }

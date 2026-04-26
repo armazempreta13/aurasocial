@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
@@ -34,14 +35,6 @@ export const tokens = {
 } as const;
 
 const css = {
-    workspace: {
-        display: 'flex',
-        height: 'calc(100vh - 64px)',
-        background: tokens.bg,
-        overflow: 'hidden',
-        position: 'relative',
-    } satisfies React.CSSProperties,
-
     sidebar: (hidden: boolean): React.CSSProperties => ({
         width: 320,
         minWidth: 320,
@@ -146,7 +139,7 @@ export function ChatWorkspace() {
 
     return (
         <AppLayout plain hideSidebar hideRightPanel>
-            <div style={css.workspace}>
+            <div className="flex overflow-hidden relative bg-[#eef0f6] h-[calc(100dvh-128px)] md:h-[calc(100dvh-64px)]">
                 {/* ── SIDEBAR ── */}
                 <div
                     style={css.sidebar(false)}

@@ -232,14 +232,14 @@ export function Login() {
           </div>
 
           {/* Social Logins */}
-          <div className="grid grid-cols-2 gap-4 mb-8">
+          <div className="flex flex-col gap-3 mb-8">
             <motion.button
-              whileHover={{ y: -2 }}
+              whileHover={{ y: -2, scale: 1.01 }}
               whileTap={{ scale: 0.98 }}
               onClick={handleGoogleLogin}
               disabled={loading}
               type="button"
-              className="flex items-center justify-center gap-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3.5 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all group disabled:opacity-50"
+              className="flex items-center justify-center gap-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 py-4 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all group disabled:opacity-50 shadow-sm"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -247,19 +247,19 @@ export function Login() {
                 <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
                 <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
               </svg>
-              <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Google</span>
+              <span className="text-[15px] font-bold text-slate-700 dark:text-slate-200">Continuar com Google</span>
             </motion.button>
 
             <motion.button
-              whileHover={{ y: -2 }}
+              whileHover={{ y: -2, scale: 1.01 }}
               whileTap={{ scale: 0.98 }}
               onClick={handleGithubLogin}
               disabled={loading}
               type="button"
-              className="flex items-center justify-center gap-3 bg-[#1e293b] dark:bg-slate-950 p-3.5 rounded-2xl hover:bg-[#0f172a] transition-all disabled:opacity-50"
+              className="flex items-center justify-center gap-3 bg-[#1e293b] dark:bg-slate-950 py-4 rounded-2xl hover:bg-[#0f172a] transition-all disabled:opacity-50 shadow-lg shadow-slate-900/10"
             >
               <Github className="w-5 h-5 text-white" />
-              <span className="text-sm font-bold text-white">GitHub</span>
+              <span className="text-[15px] font-bold text-white">Continuar com GitHub</span>
             </motion.button>
           </div>
 

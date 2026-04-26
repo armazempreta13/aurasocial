@@ -1,4 +1,6 @@
+
 'use client';
+import React from 'react';
 
 import dynamic from 'next/dynamic';
 import { useAppStore } from '@/lib/store';
@@ -10,7 +12,6 @@ import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { TopNav } from './TopNav';
 import { OnboardingFlow } from './OnboardingFlow';
 import { useEffect } from 'react';
-
 import { useSearchParams } from 'next/navigation';
 
 const Sidebar = dynamic(() => import('./Sidebar').then((mod) => mod.Sidebar), {
@@ -66,9 +67,9 @@ export function AppLayout({
   const gridColsClass = showSidebar
     ? showRightPanel
       ? 'grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_260px]'
-      : 'grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_260px]'
+      : 'grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)]'
     : showRightPanel
-      ? 'grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)_260px]'
+      ? 'grid-cols-1 lg:grid-cols-[minmax(0,1fr)_260px]'
       : 'grid-cols-1 lg:grid-cols-[minmax(0,1fr)]';
 
   return (
@@ -87,12 +88,16 @@ export function AppLayout({
         ) : (
           <div className={`w-full grid ${gridColsClass} gap-x-8`}>
             {/* Left Sidebar */}
-            <aside className="hidden lg:flex lg:justify-start sticky top-0 h-screen pt-[84px]">
-              {showSidebar ? <div className="w-[260px]"><Sidebar /></div> : <div className="w-[260px]" />}
-            </aside>
+            {showSidebar && (
+              <aside className="hidden lg:flex lg:justify-start sticky top-0 h-screen pt-[84px]">
+                <div className="w-[260px]">
+                  <Sidebar />
+                </div>
+              </aside>
+            )}
 
             {/* Main Content */}
-            <main className="pb-12 pt-[60px]">
+            <main className="pb-[88px] md:pb-12 pt-[60px]">
               <div className={`w-full ${wide ? 'max-w-[1100px]' : 'max-w-[860px]'} mx-auto`}>
                 {children || (
                   <div className="pt-2">
@@ -106,15 +111,14 @@ export function AppLayout({
             </main>
 
             {/* Right Panel */}
-            <aside className="hidden lg:flex lg:justify-end sticky top-0 h-screen pt-[84px]">
-              {showRightPanel ? (
+            {showRightPanel && (
+              <aside className="hidden lg:flex lg:justify-end sticky top-0 h-screen pt-[84px]">
                 <div className="hidden xl:block w-[260px]">
                   <ContextDockDynamic />
                 </div>
-              ) : (
-                <div className="w-[260px]" />
-              )}
-            </aside>
+                <div className="xl:hidden w-[260px]" />
+              </aside>
+            )}
           </div>
         )}
       </div>

@@ -7,7 +7,7 @@ import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
-  signInWithPopup,
+  signInWithRedirect,
   getRedirectResult,
   updateProfile,
 } from 'firebase/auth';
@@ -86,7 +86,29 @@ export function LandingAuthPanel({
     setError('');
     setInfo('');
 
-    getRedirectResult(auth).catch((err) => {
+    getRedirectResult(auth).then(async (result) => {
+      if (result && result.user) {
+        // Um usuário acabou de fazer login com Google Redirect
+        // Criar ou atualizar seu perfil no Firestore
+        try {
+          const userRef = doc(db, 'users', result.user.uid);
+          await setDoc(
+            userRef,
+            {
+              uid: result.user.uid,
+              email: result.user.email || '',
+              displayName: result.user.displayName || '',
+              photoURL: result.user.photoURL || '',
+              onboardingCompleted: false,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        } catch (err) {
+          console.error('Erro ao criar perfil após Google login:', err);
+        }
+      }
+    }).catch((err) => {
       console.error('Erro ao processar retorno do Google Redirect:', err);
       setError(getAuthErrorMessage(err, t));
     });
@@ -174,11 +196,10 @@ export function LandingAuthPanel({
 
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      await signInWithRedirect(auth, provider);
     } catch (err: any) {
       console.error('Erro no login com Google:', err);
       setError(getAuthErrorMessage(err, t));
-    } finally {
       setIsSubmitting(false);
     }
   };

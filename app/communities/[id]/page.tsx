@@ -43,6 +43,7 @@ import {
   Bell,
   ShieldAlert,
   Tag,
+  BadgeCheck,
 } from 'lucide-react';
 import { Feed } from '@/components/Feed';
 import { CreatePost } from '@/components/CreatePost';
@@ -59,6 +60,7 @@ import {
   hexToRgba,
   normalizeThemeColor,
 } from '@/lib/community-theme';
+import { isAuraSocialCommunity } from '@/lib/community-official';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { useTranslation } from 'react-i18next';
 
@@ -623,7 +625,12 @@ export default function CommunityDetailPage() {
                 <div className="mt-1 md:mt-2 min-w-0 flex-1 w-full">
                   <div className="flex items-center gap-2">
                     <h1 className="truncate text-2xl md:text-3xl font-black tracking-tight text-white drop-shadow-sm">
-                      {community.name}
+                      <span className="inline-flex items-center gap-2 min-w-0">
+                        <span className="truncate">{community.name}</span>
+                        {isAuraSocialCommunity(community) && (
+                          <BadgeCheck className="h-5 w-5 text-indigo-200 fill-indigo-600 text-white shrink-0" strokeWidth={2.5} />
+                        )}
+                      </span>
                     </h1>
                     {community.type === 'Private' && (
                       <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-white/20 backdrop-blur-md">

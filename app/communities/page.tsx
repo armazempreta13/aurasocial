@@ -16,8 +16,9 @@ import {
   Tag,
   Paintbrush,
   ImagePlus,
+  BadgeCheck,
 } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '@/firebase';
 import {
   collection,
@@ -45,6 +46,7 @@ import {
   hexToRgba,
   normalizeThemeColor,
 } from '@/lib/community-theme';
+import { isAuraSocialCommunity } from '@/lib/community-official';
 
 const EMPTY_LINK = { label: '', url: '' };
 
@@ -58,6 +60,28 @@ type CommunityDraft = {
   pinnedTopics: string[];
   links: { label: string; url: string }[];
 };
+
+function normalizeCommunityName(name: string) {
+  return (name || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function buildPageButtons(currentPage: number, totalPages: number) {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+  const buttons: Array<number | '...'> = [1];
+  const left = Math.max(2, currentPage - 1);
+  const right = Math.min(totalPages - 1, currentPage + 1);
+
+  if (left > 2) buttons.push('...');
+  for (let p = left; p <= right; p++) buttons.push(p);
+  if (right < totalPages - 1) buttons.push('...');
+  buttons.push(totalPages);
+  return buttons;
+}
 
 export default function CommunitiesPage() {
   const { t } = useTranslation('common');
@@ -82,6 +106,7 @@ export default function CommunitiesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isUploadingCover, setIsUploadingCover] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
 
@@ -153,6 +178,15 @@ export default function CommunitiesPage() {
   const handleCreateCommunity = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile || !newCommunity.name.trim() || isSubmitting) return;
+
+    const normalizedName = normalizeCommunityName(newCommunity.name);
+    const hasDuplicateName = communities.some(
+      (c) => normalizeCommunityName(String(c?.name || '')) === normalizedName,
+    );
+    if (hasDuplicateName) {
+      alert('Já existe uma comunidade com esse nome. Escolha outro nome para evitar duplicidade.');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -241,8 +275,8 @@ export default function CommunitiesPage() {
   const filteredCommunities = communities
     .filter((community) => {
       const matchesSearch =
-        community.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        community.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        String(community.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        String(community.description || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (community.pinnedTopics || []).some((topic: string) =>
           topic.toLowerCase().includes(searchQuery.toLowerCase()),
         );
@@ -263,6 +297,22 @@ export default function CommunitiesPage() {
         socialScore: friendMembers.length * 25 + Math.min(community.memberCount || 0, 200) * 0.2,
       };
     });
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, sortBy, searchQuery]);
+
+  const sortedCommunities = useMemo(() => {
+    return [...filteredCommunities].sort((a, b) => {
+      if (sortBy === 'members') return (b.socialScore || 0) - (a.socialScore || 0);
+      return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
+    });
+  }, [filteredCommunities, sortBy]);
+
+  const pageSize = 12;
+  const totalPages = Math.max(1, Math.ceil(sortedCommunities.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const pagedCommunities = sortedCommunities.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   if (!isAuthReady || !user) {
     return (
@@ -346,12 +396,7 @@ export default function CommunitiesPage() {
           </select>
         </div>
 
-        {filteredCommunities
-          .sort((a, b) => {
-            if (sortBy === 'members') return (b.socialScore || 0) - (a.socialScore || 0);
-            return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
-          })
-          .length === 0 ? (
+        {sortedCommunities.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-border/50 bg-white py-20 text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted text-muted-foreground">
               <Users className="h-8 w-8" />
@@ -368,13 +413,9 @@ export default function CommunitiesPage() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredCommunities
-              .sort((a, b) => {
-                if (sortBy === 'members') return (b.socialScore || 0) - (a.socialScore || 0);
-                return (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0);
-              })
-              .map((community) => {
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {pagedCommunities.map((community) => {
                 const isMember = community.members?.includes(profile?.uid);
                 const accent = normalizeThemeColor(community.themeColor);
                 return (
@@ -420,7 +461,12 @@ export default function CommunitiesPage() {
                         </div>
                         <div className="text-white">
                           <h3 className="text-[15px] font-bold leading-tight transition-colors group-hover:text-white">
-                            {community.name}
+                            <span className="inline-flex items-center gap-1.5">
+                              <span>{community.name}</span>
+                              {isAuraSocialCommunity(community) && (
+                                <BadgeCheck className="h-4 w-4 text-indigo-200 fill-indigo-600 text-white shrink-0" strokeWidth={2.5} />
+                              )}
+                            </span>
                           </h3>
                           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-white/80">
                             <span className="rounded-full bg-white/12 px-2 py-0.5 backdrop-blur-sm">
@@ -489,7 +535,51 @@ export default function CommunitiesPage() {
                   </Link>
                 );
               })}
-          </div>
+            </div>
+
+            {totalPages > 1 && (
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={safePage <= 1}
+                  className="rounded-xl border border-border/50 bg-white px-3 py-2 text-sm font-bold text-muted-foreground shadow-sm transition-colors hover:bg-muted/30 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Anterior
+                </button>
+
+                {buildPageButtons(safePage, totalPages).map((p, idx) =>
+                  p === '...' ? (
+                    <span key={`dots-${idx}`} className="px-2 text-sm font-bold text-muted-foreground/60">
+                      ...
+                    </span>
+                  ) : (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setCurrentPage(p)}
+                      className={`h-10 min-w-10 rounded-xl border px-3 text-sm font-black shadow-sm transition-colors ${
+                        p === safePage
+                          ? 'border-primary bg-primary text-white'
+                          : 'border-border/50 bg-white text-foreground hover:bg-muted/30'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ),
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={safePage >= totalPages}
+                  className="rounded-xl border border-border/50 bg-white px-3 py-2 text-sm font-bold text-muted-foreground shadow-sm transition-colors hover:bg-muted/30 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Próxima
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 

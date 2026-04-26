@@ -306,64 +306,17 @@ export function Feed({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const [showFeedDropdown, setShowFeedDropdown] = useState(false);
+
 
   if (status === 'pending') {
     return <div className="flex flex-col gap-6"><PostSkeleton /><PostSkeleton /></div>;
   }
 
-  const TABS = [
-    { id: 'for_you', label: 'Para você', icon: Sparkles },
-    { id: 'trending', label: 'Bombando', icon: Zap },
-    { id: 'recent', label: 'Recentes', icon: Clock },
-    { id: 'social', label: 'Círculo', icon: Users },
-    { id: 'deep', label: 'Foco total', icon: BookOpen },
-  ];
-  const activeTab = TABS.find((t) => t.id === feedMode) || TABS[0];
+
 
   return (
     <div className={containerClassName || "w-full max-w-3xl mx-auto px-1 sm:px-0"}>
-      {/* Compact Feed Mode Selector */}
-      <div className="flex justify-end mb-3 relative">
-        <button
-          onClick={() => setShowFeedDropdown((v) => !v)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white border border-slate-100 shadow-sm text-[11px] font-bold text-slate-500 hover:text-primary hover:border-primary/20 transition-all duration-200"
-        >
-          <activeTab.icon className="w-3 h-3 text-primary" />
-          <span>{activeTab.label}</span>
-          <ChevronUp className={`w-3 h-3 transition-transform duration-200 ${showFeedDropdown ? '' : 'rotate-180'}`} />
-        </button>
-        <AnimatePresence>
-          {showFeedDropdown && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setShowFeedDropdown(false)} />
-              <motion.div
-                initial={{ opacity: 0, y: -8, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                transition={{ duration: 0.15 }}
-                className="absolute top-full right-0 mt-1.5 z-50 bg-white rounded-2xl shadow-xl border border-slate-100/80 overflow-hidden py-1 w-40"
-              >
-                {TABS.map((tab) => {
-                  const Icon = tab.icon;
-                  const active = feedMode === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      onClick={() => { setFeedMode(tab.id as any); setShowFeedDropdown(false); }}
-                      className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-[12px] font-bold transition-colors ${active ? 'bg-primary/5 text-primary' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
-                    >
-                      <Icon className="w-3.5 h-3.5" />
-                      {tab.label}
-                      {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
-                    </button>
-                  );
-                })}
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
-      </div>
+
 
       {/* Real-time Injection Banner */}
       <AnimatePresence>

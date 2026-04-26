@@ -2,12 +2,14 @@ node_modules/
 .next/
 .open-next/
 .wrangler/
+.vs/
 dist/
 build/
 coverage/
 .DS_Store
 *.log
 *.zip
+*.tsbuildinfo
 .env*
 !.env.example
 otp_debug.json

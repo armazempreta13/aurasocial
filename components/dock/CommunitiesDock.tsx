@@ -3,8 +3,10 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { collection, limit, onSnapshot, query, where } from 'firebase/firestore';
+import { BadgeCheck } from 'lucide-react';
 import { db } from '@/firebase';
 import { useAppStore } from '@/lib/store';
+import { isAuraSocialCommunity } from '@/lib/community-official';
 
 function initials(name: string) {
   const clean = String(name || '').trim();
@@ -78,7 +80,12 @@ export function CommunitiesDock() {
                     )}
                   </div>
                   <div className="min-w-0">
-                    <p className="font-bold text-[13px] text-slate-900 truncate group-hover:text-primary transition-colors">{c?.name || 'Comunidade'}</p>
+                    <p className="font-bold text-[13px] text-slate-900 truncate group-hover:text-primary transition-colors flex items-center gap-1.5">
+                      <span className="truncate">{c?.name || 'Comunidade'}</span>
+                      {isAuraSocialCommunity(c) && (
+                        <BadgeCheck className="h-4 w-4 text-indigo-600 fill-indigo-600 text-white shrink-0" strokeWidth={2.5} />
+                      )}
+                    </p>
                     <p className="text-[11px] text-slate-400 truncate font-medium">
                       {(c?.type === 'Private' || c?.type === 'Privada') ? 'Privada' : 'Pública'} • {(c?.membersCount ?? c?.members?.length ?? 0)} membros
                     </p>
@@ -92,4 +99,3 @@ export function CommunitiesDock() {
     </div>
   );
 }
-
