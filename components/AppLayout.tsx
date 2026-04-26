@@ -78,15 +78,14 @@ export function AppLayout({
       <CallManager />
       <OnboardingFlow />
 
-
       {/* Main Layout */}
       <div className={plain ? "" : "aura-container"}>
         {plain ? (
-          <div className="pt-[64px] min-h-screen w-full">
+          <div className="pt-[56px] md:pt-[60px] min-h-screen w-full px-0">
             {children}
           </div>
         ) : (
-          <div className={`w-full grid ${gridColsClass} gap-x-8`}>
+          <div className={`w-full grid ${gridColsClass} gap-x-4 lg:gap-x-8`}>
             {/* Left Sidebar */}
             {showSidebar && (
               <aside className="hidden lg:flex lg:justify-start sticky top-0 h-screen pt-[84px]">
@@ -97,7 +96,7 @@ export function AppLayout({
             )}
 
             {/* Main Content */}
-            <main className="pb-[88px] md:pb-12 pt-[60px]">
+            <main className="pb-[60px] md:pb-12 pt-[56px] md:pt-[60px] px-2 md:px-0">
               <div className={`w-full ${wide ? 'max-w-[1100px]' : 'max-w-[860px]'} mx-auto`}>
                 {children || (
                   <div className="pt-2">

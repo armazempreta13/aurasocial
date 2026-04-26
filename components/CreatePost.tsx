@@ -37,19 +37,19 @@ const EMOJI_LIST = [
 
 function EmojiPicker({ onSelect, onClose }: { onSelect: (e: string) => void; onClose: () => void }) {
   return (
-    <div className="absolute top-full left-0 mt-2 z-[100] bg-[#1a1a1f] rounded-2xl shadow-2xl border border-white/10 p-4 w-[260px] animate-in fade-in slide-in-from-top-2 duration-200 backdrop-blur-xl">
-      <div className="flex justify-between items-center mb-3">
+    <div className="absolute top-full left-0 right-0 md:left-auto mt-2 z-[100] bg-[#1a1a1f] rounded-2xl shadow-2xl border border-white/10 p-3 md:p-4 w-full md:w-[260px] animate-in fade-in slide-in-from-top-2 duration-200 backdrop-blur-xl max-h-[300px] overflow-y-auto">
+      <div className="flex justify-between items-center mb-2 md:mb-3 sticky top-0">
         <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Emojis</span>
         <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors p-1 hover:bg-white/5 rounded-lg">
           <X size={14} />
         </button>
       </div>
-      <div className="grid grid-cols-8 gap-2">
+      <div className="grid grid-cols-6 md:grid-cols-8 gap-1.5 md:gap-2">
         {EMOJI_LIST.map((emoji) => (
           <button
             key={emoji}
             onClick={() => onSelect(emoji)}
-            className="text-lg hover:scale-125 hover:bg-white/10 transition-all rounded-lg p-2 active:scale-90"
+            className="text-base md:text-lg hover:scale-110 hover:bg-white/10 transition-all rounded-lg p-2 active:scale-90"
           >
             {emoji}
           </button>

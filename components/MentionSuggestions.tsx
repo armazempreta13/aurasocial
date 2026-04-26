@@ -13,17 +13,21 @@ interface UserSuggestion {
 }
 
 interface MentionSuggestionsProps {
-  searchText: string;
+  // legacy prop name 'search' used in some places; prefer 'searchText'
+  search?: string;
+  searchText?: string;
   onSelect: (user: UserSuggestion) => void;
-  onClose: () => void;
+  onClose?: () => void;
+  topOffset?: number;
 }
 
-export function MentionSuggestions({ searchText, onSelect, onClose }: MentionSuggestionsProps) {
+export function MentionSuggestions({ search, searchText, onSelect, onClose }: MentionSuggestionsProps) {
   const [users, setUsers] = useState<UserSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
+  const queryText = (search ?? searchText ?? '').trim();
 
   useEffect(() => {
-    if (!searchText) {
+    if (!queryText) {
       setUsers([]);
       return;
     }
@@ -33,8 +37,8 @@ export function MentionSuggestions({ searchText, onSelect, onClose }: MentionSug
       try {
         const q = query(
           collection(db, 'users'),
-          where('username', '>=', searchText.toLowerCase()),
-          where('username', '<=', searchText.toLowerCase() + '\uf8ff'),
+          where('username', '>=', queryText.toLowerCase()),
+          where('username', '<=', queryText.toLowerCase() + '\uf8ff'),
           limit(5)
         );
         const snapshot = await getDocs(q);
@@ -52,7 +56,7 @@ export function MentionSuggestions({ searchText, onSelect, onClose }: MentionSug
 
     const timer = setTimeout(searchUsers, 200);
     return () => clearTimeout(timer);
-  }, [searchText]);
+  }, [queryText]);
 
   if (loading && users.length === 0) {
     return (
